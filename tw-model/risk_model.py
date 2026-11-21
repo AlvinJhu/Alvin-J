@@ -10,7 +10,10 @@ v2 證實方向（漲/跌）沒有樣本外預測力；但波動度具群聚性�
 """
 import os, sys, json, itertools
 import numpy as np, pandas as pd
-sys.argv = [a for a in sys.argv if a != "--yf"] + []
+ARGS = list(sys.argv[1:]); sys.argv = sys.argv[:1]  # 避免 model.py 讀到 --yf
+USE_OPT = "--no-opt" not in ARGS  # 外資選擇權偏向 opt_fgn_bias（2018-08 起）納入大跌模型
+SINCE = ARGS[ARGS.index("--since") + 1] if "--since" in ARGS else None
+PFX = "risk_" + ("" if USE_OPT else "noopt_") + (f"since{SINCE[:4]}_" if SINCE else "")
 import model as M
 from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.preprocessing import StandardScaler
@@ -79,11 +82,15 @@ def weights(vol_fc, p_dd, target, cut, thr, band):
 
 def main():
     df = M.load(); X, y_vol, y_dd, ew, lr = build(df)
+    if USE_OPT and os.path.exists(os.path.join(M.D, "ext", "opt_txo_inst.csv")):
+        import futures_eval as FE
+        X["opt_fgn_bias"] = FE.fut_features(df, FE.load_futures(df.index))["opt_fgn_bias"]
+    if SINCE: X = X[X.index >= SINCE]
     X = X.dropna(); y_vol, y_dd, ew = y_vol.reindex(X.index), y_dd.reindex(X.index), ew.reindex(X.index)
     print(f"樣本 {X.index[0].date()} ~ {X.index[-1].date()}，{len(X)} 天，大跌（20 日內 {DD:.0%}）基準率 {y_dd.mean():.3f}")
     har = ["rv1", "rv5", "rv22"]
     sets = {"HAR": har, "HAR+幅度+VIX": har + ["rv66", "park5", "neg5", "vix"],
-            "HAR+幅度+VIX+費半籌碼": [c for c in X if c not in ("dd60", "bias240")]}
+            "HAR+幅度+VIX+費半籌碼": [c for c in X if c not in ("dd60", "bias240", "opt_fgn_bias")]}
 
     # 1) 波動度預測
     vf, rows = {}, []
@@ -97,10 +104,11 @@ def main():
                          "相關係數": float(np.corrcoef(yy, pp)[0, 1]), "QLIKE": qlike(yy.values, pp.values),
                          "MAE(年化波動點)": float(np.mean(np.abs(np.exp(yy) - np.exp(pp))))})
     vt = pd.DataFrame(rows); print(vt.round(3).to_string(index=False))
-    vt.to_csv(os.path.join(R, "risk_vol_forecast.csv"), index=False, encoding="utf-8-sig")
+    vt.to_csv(os.path.join(R, PFX + "vol_forecast.csv"), index=False, encoding="utf-8-sig")
 
     # 2) 大跌機率
-    crash_cols = sets["HAR+幅度+VIX+費半籌碼"] + ["dd60", "bias240"]
+    crash_cols = sets["HAR+幅度+VIX+費半籌碼"] + ["dd60", "bias240"] + (["opt_fgn_bias"] if "opt_fgn_bias" in X else [])
+    print("大跌模型因子：", crash_cols)
     pc = {"logit": wf(X[crash_cols], y_dd, logit), "xgb": wf(X[crash_cols], y_dd, xgb)}
     pc["ens"] = (pc["logit"] + pc["xgb"]) / 2
     pc["只用預測波動(基準)"] = vf["HAR+幅度+VIX"]
@@ -114,7 +122,7 @@ def main():
                          "AUC_95%下界": lo, "AUC_95%上界": hi,
                          "最高20%機率日的大跌率": yy[top].mean(), "其餘80%的大跌率": yy[~top].mean()})
     ct = pd.DataFrame(rows); print(ct.round(3).to_string(index=False))
-    ct.to_csv(os.path.join(R, "risk_crash_auc.csv"), index=False, encoding="utf-8-sig")
+    ct.to_csv(os.path.join(R, PFX + "crash_auc.csv"), index=False, encoding="utf-8-sig")
 
     # 3) 部位規則：只用 2018–2022 選參數
     vol_fc = np.exp(vf["HAR+幅度+VIX"]); p_dd = pc["ens"]
@@ -129,7 +137,7 @@ def main():
         st = M.stats(s[ins]); grid.append({"target": tg, "cut": cut, "thr": thr, "band": band, **st})
     grid = pd.DataFrame(grid).sort_values("Sharpe", ascending=False)
     best = grid.iloc[0]; print("2018–2022 選出參數：", best[["target", "cut", "thr", "band", "Sharpe"]].to_dict())
-    grid.to_csv(os.path.join(R, "risk_param_grid_insample.csv"), index=False, encoding="utf-8-sig")
+    grid.to_csv(os.path.join(R, PFX + "param_grid_insample.csv"), index=False, encoding="utf-8-sig")
 
     vol20 = (lr.rolling(20).std() * ANN).reindex(test)
     cands = {
@@ -145,7 +153,7 @@ def main():
             rows.append({"策略": n, "期間": per, **M.stats(s[m]), "平均持股": w[m].mean(),
                          "年換手": w[m].diff().abs().sum() / (m.sum() / 252)})
     sp = pd.DataFrame(rows); print(sp.round(3).to_string(index=False))
-    sp.to_csv(os.path.join(R, "risk_strategy.csv"), index=False, encoding="utf-8-sig")
+    sp.to_csv(os.path.join(R, PFX + "strategy.csv"), index=False, encoding="utf-8-sig")
 
     # 4) 今日判斷：全部資料重訓
     last = X.index[-1]; fit_v = y_vol.notna(); fit_d = y_dd.notna()
@@ -162,8 +170,9 @@ def main():
              "range_20d_68": [round(c * np.exp(-s20)), round(c * np.exp(s20))],
              "range_20d_95": [round(c * np.exp(-1.96 * s20)), round(c * np.exp(1.96 * s20))],
              "VaR95_1d_pct": round(-1.645 * v_today / ANN, 4),
+             "opt_fgn_bias": (round(float(X.opt_fgn_bias.iloc[-1]), 4) if "opt_fgn_bias" in X else None),
              "suggest_equity": round(w_today, 3), "params": best[["target", "cut", "thr", "band"]].to_dict()}
-    json.dump(today, open(os.path.join(R, "risk_today.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    json.dump(today, open(os.path.join(R, PFX + "today.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=2)
     print(json.dumps(today, ensure_ascii=False))
 
     try:
@@ -177,7 +186,7 @@ def main():
         ax[0].set_yscale("log"); ax[0].legend(fontsize=8); ax[0].set_title("TAIEX risk model: walk-forward, params chosen on 2018-2022 only")
         ax[1].plot(np.exp(y_vol[test]), lw=.7, label="realized 20d vol"); ax[1].plot(vol_fc, lw=.7, label="forecast"); ax[1].legend(fontsize=8)
         ax[2].fill_between(test, cands["v3 風險模型（選定參數）"].values, step="post", alpha=.5); ax[2].set_ylabel("weight")
-        fig.tight_layout(); fig.savefig(os.path.join(R, "risk_equity.png"), dpi=110)
+        fig.tight_layout(); fig.savefig(os.path.join(R, PFX + "equity.png"), dpi=110)
     except Exception as e:
         print("圖檔略過：", e)
 
