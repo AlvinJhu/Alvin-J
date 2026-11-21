@@ -72,8 +72,16 @@ def qlike(y, p):  # Patton (2011)：對變異數預測的穩健損失
 def strat(w, r, cost=0.001):
     return w * r - w.diff().abs().fillna(w.iloc[0]) * cost
 
-def weights(vol_fc, p_dd, target, cut, thr, band):
-    raw = np.minimum(1.0, target / np.asarray(vol_fc)) * np.where(p_dd > thr, cut, 1.0)
+def warn_active(p_dd, thr, hold):
+    """警訊持續：任一天大跌機率 > thr 後，減碼至少維持 hold 個交易日，不因機率短暫回落就加回。"""
+    flag = np.asarray(p_dd) > thr; act = np.zeros(len(flag), bool); last = -10**9
+    for i, f in enumerate(flag):
+        if f: last = i
+        act[i] = i - last < hold
+    return act
+
+def weights(vol_fc, p_dd, target, cut, thr, band, hold=1):
+    raw = np.minimum(1.0, target / np.asarray(vol_fc)) * np.where(warn_active(p_dd, thr, hold), cut, 1.0)
     w = np.empty(len(raw)); cur = raw[0]
     for i, x in enumerate(raw):  # 調整帶：差距超過 band 才調整
         if abs(x - cur) > band: cur = x
@@ -131,17 +139,18 @@ def main():
     vol_fc, p_dd, r = vol_fc[test], p_dd[test], r[test]
     ins, oos = test < SPLIT, test >= SPLIT
     grid = []
-    for tg, cut, thr, band in itertools.product([0.12, 0.15, 0.18, 0.22], [1.0, 0.5, 0.25], [0.2, 0.3, 0.4], [0.0, 0.1, 0.2]):
-        if cut == 1.0 and thr != 0.2: continue
-        w = weights(vol_fc, p_dd.values, tg, cut, thr, band); s = strat(w, r)
-        st = M.stats(s[ins]); grid.append({"target": tg, "cut": cut, "thr": thr, "band": band, **st})
+    for tg, cut, thr, band, hold in itertools.product([0.12, 0.15, 0.18, 0.22], [1.0, 0.5, 0.25], [0.2, 0.25, 0.3, 0.4], [0.0, 0.1, 0.2], [1, 5, 10, 20]):
+        if cut == 1.0 and (thr != 0.2 or hold != 1): continue
+        w = weights(vol_fc, p_dd.values, tg, cut, thr, band, hold); s = strat(w, r)
+        st = M.stats(s[ins]); grid.append({"target": tg, "cut": cut, "thr": thr, "band": band, "hold": hold, **st})
     grid = pd.DataFrame(grid).sort_values("Sharpe", ascending=False)
-    best = grid.iloc[0]; print("2018–2022 選出參數：", best[["target", "cut", "thr", "band", "Sharpe"]].to_dict())
+    best = grid.iloc[0]; print("2018–2022 選出參數：", best[["target", "cut", "thr", "band", "hold", "Sharpe"]].to_dict())
     grid.to_csv(os.path.join(R, PFX + "param_grid_insample.csv"), index=False, encoding="utf-8-sig")
 
     vol20 = (lr.rolling(20).std() * ANN).reindex(test)
     cands = {
-        "v3 風險模型（選定參數）": weights(vol_fc, p_dd.values, best.target, best.cut, best.thr, best.band),
+        "v3 風險模型（選定參數）": weights(vol_fc, p_dd.values, best.target, best.cut, best.thr, best.band, int(best.hold)),
+        "v3 風險模型（不含警訊持續）": weights(vol_fc, p_dd.values, best.target, best.cut, best.thr, best.band, 1),
         "v3 只用預測波動（不看大跌機率）": weights(vol_fc, p_dd.values, best.target, 1.0, 1.0, best.band),
         "v2 波動目標（過去20日波動）": pd.Series(M.exposure(np.full(len(test), .6), vol20.values), index=test),
         "買進持有": pd.Series(1.0, index=test),
@@ -161,7 +170,10 @@ def main():
     v_today = float(np.exp(ols(X.loc[fit_v, cols_v], y_vol[fit_v], X.loc[[last], cols_v])[0]))
     pd_today = float((logit(X.loc[fit_d, crash_cols], y_dd[fit_d], X.loc[[last], crash_cols])[0] +
                       xgb(X.loc[fit_d, crash_cols], y_dd[fit_d], X.loc[[last], crash_cols])[0]) / 2)
-    w_today = float(min(1.0, best.target / v_today) * (best.cut if pd_today > best.thr else 1.0))
+    hist_p = np.append(p_dd.values[-(int(best.hold) - 1):] if int(best.hold) > 1 else [], pd_today)
+    warn = bool((hist_p > best.thr).any())
+    over = p_dd[p_dd > best.thr]
+    w_today = float(min(1.0, best.target / v_today) * (best.cut if warn else 1.0))
     c = float(df.close.iloc[-1]); s20 = v_today / ANN * np.sqrt(H)
     hist = pd.Series(np.exp(y_vol.dropna()))
     today = {"date": str(last.date()), "close": c,
@@ -171,7 +183,8 @@ def main():
              "range_20d_95": [round(c * np.exp(-1.96 * s20)), round(c * np.exp(1.96 * s20))],
              "VaR95_1d_pct": round(-1.645 * v_today / ANN, 4),
              "opt_fgn_bias": (round(float(X.opt_fgn_bias.iloc[-1]), 4) if "opt_fgn_bias" in X else None),
-             "suggest_equity": round(w_today, 3), "params": best[["target", "cut", "thr", "band"]].to_dict()}
+             "warning_active": warn, "last_warning_day": (str(over.index[-1].date()) if len(over) else None),
+             "suggest_equity": round(w_today, 3), "params": best[["target", "cut", "thr", "band", "hold"]].to_dict()}
     json.dump(today, open(os.path.join(R, PFX + "today.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=2)
     print(json.dumps(today, ensure_ascii=False))
 
@@ -180,7 +193,7 @@ def main():
         fig, ax = plt.subplots(3, 1, figsize=(11, 9), sharex=True, gridspec_kw={"height_ratios": [3, 1.3, 1]})
         for n, w in cands.items():
             s = strat(w, r) if n != "買進持有" else r
-            ax[0].plot((1 + s).cumprod(), label={"v3 風險模型（選定參數）": "v3 risk model", "v3 只用預測波動（不看大跌機率）": "v3 vol-forecast only",
+            ax[0].plot((1 + s).cumprod(), label={"v3 風險模型（選定參數）": "v3 risk model", "v3 風險模型（不含警訊持續）": "v3 no hold", "v3 只用預測波動（不看大跌機率）": "v3 vol-forecast only",
                                                  "v2 波動目標（過去20日波動）": "v2 vol target", "買進持有": "Buy & Hold"}[n])
         ax[0].axvline(SPLIT, color="k", ls="--", lw=.8); ax[0].text(SPLIT, ax[0].get_ylim()[1] * .9, " holdout", fontsize=8)
         ax[0].set_yscale("log"); ax[0].legend(fontsize=8); ax[0].set_title("TAIEX risk model: walk-forward, params chosen on 2018-2022 only")

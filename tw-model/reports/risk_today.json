@@ -15,11 +15,14 @@
   ],
   "VaR95_1d_pct": -0.0535,
   "opt_fgn_bias": 0.0091,
-  "suggest_equity": 0.426,
+  "warning_active": true,
+  "last_warning_day": "2026-11-11",
+  "suggest_equity": 0.106,
   "params": {
     "target": 0.22,
     "cut": 0.25,
-    "thr": 0.2,
-    "band": 0.2
+    "thr": 0.25,
+    "band": 0.2,
+    "hold": 10.0
   }
 }
