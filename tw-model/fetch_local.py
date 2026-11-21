@@ -31,11 +31,11 @@ def num(x):
 def check_against_twse(inst, mg):
     """與證交所原始 jsonl 比對外資買賣超、融資金額。"""
     fgn, mgt = {}, {}
-    for l in open(os.path.join(D, "inst.jsonl")):
+    for l in open(os.path.join(D, "inst.jsonl"), encoding="utf-8"):
         r = json.loads(l); rows = {x[0]: num(x[3]) for x in r["j"].get("data", [])}
         v = rows.get("外資及陸資(不含外資自營商)", rows.get("外資及陸資"))
         if v is not None: fgn[pd.Timestamp(r["key"])] = v
-    for l in open(os.path.join(D, "margin.jsonl")):
+    for l in open(os.path.join(D, "margin.jsonl"), encoding="utf-8"):
         r = json.loads(l); tb = r["j"].get("tables") or []
         for x in (tb[0]["data"] if tb else []):
             if x[0].startswith("融資金額"): mgt[pd.Timestamp(r["key"])] = num(x[5]) * 1000  # 仟元 -> 元
@@ -75,7 +75,7 @@ def main():
             log[k] = [str(s.index.min().date()), str(s.index.max().date()), len(s)]
     except Exception as e:
         log["yfinance_error"] = repr(e)
-    json.dump(log, open(os.path.join(EXT, "fetch_log.json"), "w"), ensure_ascii=False, indent=2, default=str)
+    json.dump(log, open(os.path.join(EXT, "fetch_log.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=2, default=str)
     print(json.dumps(log, ensure_ascii=False, indent=2, default=str))
 
 if __name__ == "__main__":

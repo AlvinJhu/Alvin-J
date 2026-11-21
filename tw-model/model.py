@@ -24,7 +24,7 @@ def roc(s):
 
 def jl(fn):
     p = os.path.join(D, fn)
-    return [json.loads(l) for l in open(p) if l.strip()] if os.path.exists(p) else []
+    return [json.loads(l) for l in open(p, encoding="utf-8") if l.strip()] if os.path.exists(p) else []
 
 # ---------- 載入 ----------
 def merge_finmind(df):
@@ -266,7 +266,7 @@ def main():
                   "VaR95_1d_pct": float(-1.645 * ew), "suggest_equity": expo, "suggest_cash": 1 - expo,
                   "factors_today": {k: (None if pd.isna(v) else round(float(v), 4)) for k, v in data.loc[last].items()},
                   "xgb_top_features_20d": imp})
-    json.dump(today, open(os.path.join(R, "today.json"), "w"), ensure_ascii=False, indent=2)
+    json.dump(today, open(os.path.join(R, "today.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=2)
     print(json.dumps({k: today[k] for k in ("date", "close", "p_up_1d", "p_up_20d", "range_1d_95", "range_20d_68", "range_20d_95", "suggest_cash")}, ensure_ascii=False))
 
     try:
