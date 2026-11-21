@@ -1,0 +1,200 @@
+{
+  "fut_tx_daily": {
+    "rows": 62847,
+    "dates": [
+      "2016-01-04",
+      "2026-11-20",
+      2651
+    ],
+    "columns": [
+      "date",
+      "futures_id",
+      "contract_date",
+      "open",
+      "max",
+      "min",
+      "close",
+      "spread",
+      "spread_per",
+      "volume",
+      "settlement_price",
+      "open_interest",
+      "trading_session"
+    ],
+    "sample": [
+      {
+        "date": "2026-11-20",
+        "futures_id": "TX",
+        "contract_date": "202612/202709",
+        "open": 535.0,
+        "max": 535.0,
+        "min": 535.0,
+        "close": 535.0,
+        "spread": 0.0,
+        "spread_per": 0.0,
+        "volume": 2,
+        "settlement_price": 0.0,
+        "open_interest": 0,
+        "trading_session": "position"
+      },
+      {
+        "date": "2026-11-20",
+        "futures_id": "TX",
+        "contract_date": "202701/202702",
+        "open": 101.0,
+        "max": 101.0,
+        "min": 101.0,
+        "close": 101.0,
+        "spread": 0.0,
+        "spread_per": 0.0,
+        "volume": 1,
+        "settlement_price": 0.0,
+        "open_interest": 0,
+        "trading_session": "position"
+      },
+      {
+        "date": "2026-11-20",
+        "futures_id": "TX",
+        "contract_date": "202702/202703",
+        "open": 0.0,
+        "max": 0.0,
+        "min": 0.0,
+        "close": 0.0,
+        "spread": 0.0,
+        "spread_per": 0.0,
+        "volume": 0,
+        "settlement_price": 0.0,
+        "open_interest": 0,
+        "trading_session": "position"
+      }
+    ]
+  },
+  "fut_tx_inst": {
+    "rows": 6183,
+    "dates": [
+      "2018-06-05",
+      "2026-11-20",
+      2061
+    ],
+    "columns": [
+      "futures_id",
+      "date",
+      "institutional_investors",
+      "long_deal_volume",
+      "long_deal_amount",
+      "short_deal_volume",
+      "short_deal_amount",
+      "long_open_interest_balance_volume",
+      "long_open_interest_balance_amount",
+      "short_open_interest_balance_volume",
+      "short_open_interest_balance_amount"
+    ],
+    "sample": [
+      {
+        "futures_id": "TX",
+        "date": "2026-11-20",
+        "institutional_investors": "自營商",
+        "long_deal_volume": 11645,
+        "long_deal_amount": 85808123,
+        "short_deal_volume": 9922,
+        "short_deal_amount": 72938738,
+        "long_open_interest_balance_volume": 4128,
+        "long_open_interest_balance_amount": 29569291,
+        "short_open_interest_balance_volume": 3846,
+        "short_open_interest_balance_amount": 27557289
+      },
+      {
+        "futures_id": "TX",
+        "date": "2026-11-20",
+        "institutional_investors": "投信",
+        "long_deal_volume": 60,
+        "long_deal_amount": 429375,
+        "short_deal_volume": 4252,
+        "short_deal_amount": 30458917,
+        "long_open_interest_balance_volume": 91618,
+        "long_open_interest_balance_amount": 655984880,
+        "short_open_interest_balance_volume": 4019,
+        "short_open_interest_balance_amount": 28776040
+      },
+      {
+        "futures_id": "TX",
+        "date": "2026-11-20",
+        "institutional_investors": "外資",
+        "long_deal_volume": 118873,
+        "long_deal_amount": 888954284,
+        "short_deal_volume": 117563,
+        "short_deal_amount": 879148033,
+        "long_open_interest_balance_volume": 16303,
+        "long_open_interest_balance_amount": 116730446,
+        "short_open_interest_balance_volume": 114166,
+        "short_open_interest_balance_amount": 817442412
+      }
+    ]
+  },
+  "opt_txo_inst": {
+    "rows": 12366,
+    "dates": [
+      "2018-06-05",
+      "2026-11-20",
+      2061
+    ],
+    "columns": [
+      "option_id",
+      "date",
+      "call_put",
+      "institutional_investors",
+      "long_deal_volume",
+      "long_deal_amount",
+      "short_deal_volume",
+      "short_deal_amount",
+      "long_open_interest_balance_volume",
+      "long_open_interest_balance_amount",
+      "short_open_interest_balance_volume",
+      "short_open_interest_balance_amount"
+    ],
+    "sample": [
+      {
+        "option_id": "TXO",
+        "date": "2026-11-20",
+        "call_put": "賣權",
+        "institutional_investors": "自營商",
+        "long_deal_volume": 73633,
+        "long_deal_amount": 1488634,
+        "short_deal_volume": 86022,
+        "short_deal_amount": 1333747,
+        "long_open_interest_balance_volume": 9919,
+        "long_open_interest_balance_amount": 1738669,
+        "short_open_interest_balance_volume": 9881,
+        "short_open_interest_balance_amount": 1583889
+      },
+      {
+        "option_id": "TXO",
+        "date": "2026-11-20",
+        "call_put": "賣權",
+        "institutional_investors": "投信",
+        "long_deal_volume": 400,
+        "long_deal_amount": 4261,
+        "short_deal_volume": 0,
+        "short_deal_amount": 0,
+        "long_open_interest_balance_volume": 220,
+        "long_open_interest_balance_amount": 19360,
+        "short_open_interest_balance_volume": 0,
+        "short_open_interest_balance_amount": 0
+      },
+      {
+        "option_id": "TXO",
+        "date": "2026-11-20",
+        "call_put": "賣權",
+        "institutional_investors": "外資",
+        "long_deal_volume": 112478,
+        "long_deal_amount": 1149913,
+        "short_deal_volume": 111724,
+        "short_deal_amount": 1243003,
+        "long_open_interest_balance_volume": 10234,
+        "long_open_interest_balance_amount": 4003353,
+        "short_open_interest_balance_volume": 9479,
+        "short_open_interest_balance_amount": 3700552
+      }
+    ]
+  }
+}
