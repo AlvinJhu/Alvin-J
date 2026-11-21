@@ -5,9 +5,9 @@
 2. 費半 ^SOX、美債 10 年 ^TNX：yfinance
 3. 與 data/inst.jsonl、margin.jsonl（證交所原始檔，近 375 天）逐日比對，確認兩個來源一致
 輸出：data/ext/inst_finmind.csv、margin_finmind.csv、sox.csv、tnx.csv
-用法：python fetch_local.py [--token FinMind_token]
+用法：python fetch_local.py [--token FinMind_token]；python fetch_local.py --futures（期貨、選擇權未平倉）
 """
-import os, sys, json, datetime as dt
+import os, sys, json, time, datetime as dt
 import pandas as pd, numpy as np, requests
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -51,6 +51,36 @@ def check_against_twse(inst, mg):
                       "完全一致比例": round(float(np.isclose(j.finmind, j.twse * ratio, rtol=1e-4).mean()), 4)}
     return out
 
+FUT = {  # 期交所資料（FinMind 轉載），逐年抓避免單次過大
+    "fut_tx_daily": ("TaiwanFuturesDaily", "TX"),                       # 台指期各月契約 OHLC、結算價、未平倉
+    "fut_tx_inst": ("TaiwanFuturesInstitutionalInvestors", "TX"),       # 三大法人台指期多空未平倉
+    "opt_txo_inst": ("TaiwanOptionInstitutionalInvestors", "TXO"),     # 三大法人台指選擇權買賣權未平倉
+}
+
+def futures(tok=None):
+    """--futures：抓期貨、選擇權未平倉，存 data/ext/<name>.csv，並記錄欄位供建因子。"""
+    log = {}
+    for name, (ds, did) in FUT.items():
+        parts = []
+        for y in range(2016, dt.date.today().year + 1):
+            p = {"dataset": ds, "data_id": did, "start_date": f"{y}-01-01", "end_date": min(f"{y}-12-31", TODAY)}
+            h = {"Authorization": f"Bearer {tok}"} if tok else {}
+            for k in range(3):
+                try:
+                    j = requests.get(API, params=p, headers=h, timeout=120).json()
+                    if j.get("status") == 200: parts.append(pd.DataFrame(j["data"])); break
+                    log.setdefault(name + "_msg", []).append(f"{y}: {j.get('msg')}")
+                except Exception as e:
+                    log.setdefault(name + "_msg", []).append(f"{y}: {e!r}")
+                time.sleep(30)
+            time.sleep(2)
+        if parts:
+            d = pd.concat(parts, ignore_index=True); d.to_csv(os.path.join(EXT, f"{name}.csv"), index=False)
+            log[name] = {"rows": len(d), "dates": [str(d.date.min()), str(d.date.max()), int(d.date.nunique())],
+                         "columns": list(d.columns), "sample": d.tail(3).to_dict("records")}
+    json.dump(log, open(os.path.join(EXT, "fetch_futures_log.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=2, default=str)
+    print(json.dumps(log, ensure_ascii=False, indent=2, default=str)[:5000])
+
 def main():
     tok = sys.argv[sys.argv.index("--token") + 1] if "--token" in sys.argv else os.environ.get("FINMIND_TOKEN")
     log = {}
@@ -79,4 +109,7 @@ def main():
     print(json.dumps(log, ensure_ascii=False, indent=2, default=str))
 
 if __name__ == "__main__":
-    main()
+    if "--futures" in sys.argv:
+        futures(sys.argv[sys.argv.index("--token") + 1] if "--token" in sys.argv else os.environ.get("FINMIND_TOKEN"))
+    else:
+        main()
