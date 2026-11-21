@@ -5,7 +5,7 @@
 2. 費半 ^SOX、美債 10 年 ^TNX：yfinance
 3. 與 data/inst.jsonl、margin.jsonl（證交所原始檔，近 375 天）逐日比對，確認兩個來源一致
 輸出：data/ext/inst_finmind.csv、margin_finmind.csv、sox.csv、tnx.csv
-用法：python fetch_local.py [--token FinMind_token]；python fetch_local.py --futures（期貨、選擇權未平倉）
+用法：python fetch_local.py [--token FinMind_token]；python fetch_local.py --futures（期貨、選擇權未平倉）；--optdaily（台指選擇權每日買賣權成交量、未平倉彙總）
 """
 import os, sys, json, time, datetime as dt
 import pandas as pd, numpy as np, requests
@@ -56,6 +56,51 @@ FUT = {  # 期交所資料（FinMind 轉載），逐年抓避免單次過大
     "fut_tx_inst": ("TaiwanFuturesInstitutionalInvestors", "TX"),       # 三大法人台指期多空未平倉
     "opt_txo_inst": ("TaiwanOptionInstitutionalInvestors", "TXO"),     # 三大法人台指選擇權買賣權未平倉
 }
+
+def opt_daily(tok=None):
+    """台指選擇權每日行情（全部履約價）彙總成每日一列：買賣權成交量、未平倉、近月最大未平倉履約價。"""
+    rows, log = [], []
+    h = {"Authorization": f"Bearer {tok}"} if tok else {}
+    for y in range(2016, dt.date.today().year + 1):
+        for q0, q1 in (("01-01", "03-31"), ("04-01", "06-30"), ("07-01", "09-30"), ("10-01", "12-31")):
+            st, en = f"{y}-{q0}", min(f"{y}-{q1}", TODAY)
+            if st > TODAY: continue
+            for k in range(3):
+                try:
+                    j = requests.get(API, params={"dataset": "TaiwanOptionDaily", "data_id": "TXO", "start_date": st, "end_date": en},
+                                     headers=h, timeout=300).json()
+                    if j.get("status") == 200: break
+                    log.append(f"{st}: {j.get('msg')}")
+                except Exception as e:
+                    log.append(f"{st}: {e!r}")
+                time.sleep(60)
+            else:
+                continue
+            d = pd.DataFrame(j["data"])
+            if d.empty: continue
+            if "trading_session" in d: d = d[d.trading_session == "position"]
+            cp = d.call_put.astype(str).str.lower().map(lambda x: "C" if x in ("call", "買權", "c") else "P")
+            d = d.assign(cp=cp, cd=d.contract_date.astype(str).str.strip())
+            mon = d[d.cd.str.fullmatch(r"\d{6}")]
+            for day, g in d.groupby("date"):
+                r = {"date": day}
+                for c in ("C", "P"):
+                    x = g[g.cp == c]; r[f"vol_{c}"] = x.volume.sum(); r[f"oi_{c}"] = x.open_interest.sum()
+                m = mon[mon.date == day]
+                if len(m):
+                    near = m[m.cd == m.cd.min()]
+                    for c in ("C", "P"):
+                        x = near[near.cp == c]
+                        if len(x) and x.open_interest.max() > 0:
+                            r[f"maxoi_strike_{c}"] = float(x.loc[x.open_interest.idxmax(), "strike_price"])
+                            r[f"near_oi_{c}"] = x.open_interest.sum()
+                rows.append(r)
+            print(st, len(d), flush=True); time.sleep(3)
+    out = pd.DataFrame(rows).sort_values("date"); out.to_csv(os.path.join(EXT, "opt_txo_daily_agg.csv"), index=False)
+    info = {"rows": len(out), "dates": [str(out.date.min()), str(out.date.max())], "columns": list(out.columns),
+            "tail": out.tail(3).to_dict("records"), "errors": log[:20]}
+    json.dump(info, open(os.path.join(EXT, "fetch_optdaily_log.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=2, default=str)
+    print(json.dumps(info, ensure_ascii=False, default=str)[:3000])
 
 def futures(tok=None):
     """--futures：抓期貨、選擇權未平倉，存 data/ext/<name>.csv，並記錄欄位供建因子。"""
@@ -109,7 +154,9 @@ def main():
     print(json.dumps(log, ensure_ascii=False, indent=2, default=str))
 
 if __name__ == "__main__":
-    if "--futures" in sys.argv:
+    if "--optdaily" in sys.argv:
+        opt_daily(os.environ.get("FINMIND_TOKEN"))
+    elif "--futures" in sys.argv:
         futures(sys.argv[sys.argv.index("--token") + 1] if "--token" in sys.argv else os.environ.get("FINMIND_TOKEN"))
     else:
         main()
