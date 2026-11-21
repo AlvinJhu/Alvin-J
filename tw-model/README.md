@@ -6,6 +6,7 @@
 - `model.py`：因子、walk-forward 回測、今日預測。`python model.py`（`data/ext/` 有 sox/tnx 檔就自動納入；`--yf` 改為即時下載）
 - `data/`：原始資料（jsonl）、`data/ext/` VIX、USD/TWD
 - `risk_model.py`：v3 風險模型（波動預測、大跌機率、部位），`python risk_model.py`，輸出 `reports/risk_*`
+- `futures_eval.py`：期貨、選擇權未平倉因子驗證（`python fetch_local.py --futures` 取資料），輸出 `reports/futures_*`
 - `reports/`：`model_accuracy.csv`、`backtest_summary.csv`、`calibration_20d.csv`、`today.json`、`equity.png`
 
 ## 方法
@@ -71,9 +72,31 @@ HAR 類模型在 R²、MAE 勝過 EWMA，但 QLIKE（對低估較敏感）EWMA �
 | 買進持有 | 1.19 | 0.82 | -31.6% | 15.5% |
 結論：v3 讓部位與 Sharpe 接近買進持有、波動較低，但沒有穩定勝過買進持有；價值在「風險量化與部位上限」，不是超額報酬。大跌機率減碼會使年換手升至約 7.5 倍，成本須注意。
 
+## 期貨、選擇權籌碼（`futures_eval.py`，2026-11-22）
+資料：FinMind 轉載期交所，台指期每日未平倉、結算價（2016 起），三大法人台指期與台指選擇權未平倉（2018-06 起）。因子延後 1 日。共同樣本 2018-08～2026-11（2,001 天）。
+
+方向（ensemble AUC，同樣本比較）：
+| 因子組 | 次日 | 20 日 [95% 區間] |
+|---|---|---|
+| v1 | 0.476 | 0.439 [0.357, 0.518] |
+| 只用期貨選擇權（13 個） | 0.486 | 0.473 [0.382, 0.573] |
+| 全部 v2＋期貨選擇權（45 個） | 0.495 | 0.469 [0.383, 0.556] |
+→ 期貨籌碼對方向一樣沒有預測力。
+
+20 日內跌 7%（基準率 12%）：
+| 因子組 | AUC [95% 區間] |
+|---|---|
+| v3 風險因子（13 個） | 0.640 [0.499, 0.758] |
+| v3＋全部期貨選擇權（26 個） | 0.607 [0.457, 0.734] |
+| 外資選擇權淨部位偏向 `opt_fgn_bias` 單獨 | **0.725 [0.610, 0.824]** |
+| 過去 22 日波動＋`opt_fgn_bias` | 0.711 [0.584, 0.826] |
+
+`opt_fgn_bias` =（外資買權淨未平倉金額 − 賣權淨未平倉金額）/ 兩者總未平倉金額。依五分位，最偏空（外資淨買賣權）那組 20 日內跌 7% 的比例 26.2%，最偏多那組 1.2%，單調遞減；2020–2022（AUC 0.61）與 2023–2026（0.76）方向一致。
+注意：它是 13 個期貨因子中挑出的最佳者，存在資料探勘偏誤（Harvey et al., 2016）；且外資選擇權部位含避險用途。列為「候選風險指標」，建議先前瞻觀察 3–6 個月再納入 v3 部位規則。與 Pan & Poteshman (2006) 選擇權部位含資訊的發現方向一致。
+
 ## 限制
 - 雲端工作階段連不到證交所、FinMind、Yahoo；資料用 GitHub Actions 或本機 `fetch_local.py` 更新
-- 尚未納入期交所（外資期貨未平倉、Put/Call、台指 VIX）
+- 尚未納入台指 VIX、選擇權各履約價未平倉分布
 - 回測用價格指數，未含股息，買進持有報酬被低估約每年 3%
 - 極端事件（如 2026-11-20 單日 -6.23%）屬於厚尾，常態假設的區間會低估
 
@@ -83,6 +106,7 @@ HAR 類模型在 R²、MAE 勝過 EWMA，但 QLIKE（對低估較敏感）EWMA �
 - Harvey, C. R., Liu, Y., & Zhu, H. (2016). …and the cross-section of expected returns. *The Review of Financial Studies, 29*(1), 5–68. https://doi.org/10.1093/rfs/hhv059
 - J.P. Morgan/Reuters. (1996). *RiskMetrics—Technical document* (4th ed.).
 - Künsch, H. R. (1989). The jackknife and the bootstrap for general stationary observations. *The Annals of Statistics, 17*(3), 1217–1241. https://doi.org/10.1214/aos/1176347265
+- Pan, J., & Poteshman, A. M. (2006). The information in option volume for future stock prices. *The Review of Financial Studies, 19*(3), 871–908. https://doi.org/10.1093/rfs/hhj024
 - Parkinson, M. (1980). The extreme value method for estimating the variance of the rate of return. *The Journal of Business, 53*(1), 61–65. https://doi.org/10.1086/296071
 - Patton, A. J. (2011). Volatility forecast comparison using imperfect volatility proxies. *Journal of Econometrics, 160*(1), 246–256. https://doi.org/10.1016/j.jeconom.2010.03.034
 - López de Prado, M. (2018). *Advances in financial machine learning*. Wiley.
