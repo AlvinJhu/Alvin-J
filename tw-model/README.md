@@ -7,7 +7,7 @@
 - `data/`：原始資料（jsonl）、`data/ext/` VIX、USD/TWD
 - `risk_model.py`：v3 風險模型（波動預測、大跌機率、部位），`python risk_model.py`，輸出 `reports/risk_*`
 - `futures_eval.py`：期貨、選擇權未平倉因子驗證（`python fetch_local.py --futures` 取資料），輸出 `reports/futures_*`
-- `pc_eval.py`：台指選擇權 P/C 比驗證；`rally_eval.py`：大漲機率驗證；`crash_case_study.py`：歷次大跌前模型讀數
+- `bb_eval.py`：布林通道驗證；`pc_eval.py`：台指選擇權 P/C 比驗證；`rally_eval.py`：大漲機率驗證；`crash_case_study.py`：歷次大跌前模型讀數
 - `reports/`：`model_accuracy.csv`、`backtest_summary.csv`、`calibration_20d.csv`、`today.json`、`equity.png`
 
 ## 方法
@@ -136,6 +136,17 @@ HAR 類模型在 R²、MAE 勝過 EWMA，但 QLIKE（對低估較敏感）EWMA �
 結論：P/C 比單獨或加入模型都沒有改善，不採用。全樣本分組看，P/C 未平倉比最低（買權遠多於賣權、市場偏樂觀）的五分之一日子大跌率 21%、其餘 6–11%，符合「過度樂觀」的反向指標說法；但走動式驗證中方向不穩定（2018–2022 反向），屬事後才看得到的關係。
 近月最大未平倉履約價在結算換月前後跳動不合理，暫不採用。
 
+## 布林通道（`bb_eval.py`，2026-11-22）
+因子（20 日、±2σ）：%B、%B 5 日變化、帶寬、帶寬 120 日分位、近 5 日收在下軌下／上軌上天數。同樣本 2018-06～2026-11。
+| 20 日內跌 7% AUC | 2018–2022 | 2023–2026 | 全期 |
+|---|---|---|---|
+| %B 單獨 | 0.60 | 0.62 | 0.61 |
+| 帶寬單獨 | 0.44 | 0.56 | 0.47 |
+| v3.1 | 0.45 | **0.79** | 0.65 |
+| v3.1＋布林六因子 | 0.51 | 0.76 | 0.66 |
+部位（同一組 v3.1 參數，不重選）保留期 Sharpe：v3.1 1.66／加布林 1.42；最大回撤 -18.7%／-21.9%。
+結論：不採用。帶寬與 22 日波動相關 0.71，資訊已在模型內；%B 單獨在兩段都約 0.6（收在下軌附近時大跌機率較高，屬順勢而非均值回歸），但區間含 0.5，加入後保留期反而變差。
+
 ## 限制
 - 雲端工作階段連不到證交所、FinMind、Yahoo；資料用 GitHub Actions 或本機 `fetch_local.py` 更新
 - 尚未納入台指 VIX；選擇權最大未平倉履約價（支撐/壓力）換月時資料不穩，未採用
@@ -143,6 +154,7 @@ HAR 類模型在 R²、MAE 勝過 EWMA，但 QLIKE（對低估較敏感）EWMA �
 - 極端事件（如 2026-11-20 單日 -6.23%）屬於厚尾，常態假設的區間會低估
 
 ## 參考文獻
+- Bollinger, J. (2001). *Bollinger on Bollinger bands*. McGraw-Hill.
 - Corsi, F. (2009). A simple approximate long-memory model of realized volatility. *Journal of Financial Econometrics, 7*(2), 174–196. https://doi.org/10.1093/jjfinec/nbp001
 - Engle, R. F. (1982). Autoregressive conditional heteroscedasticity with estimates of the variance of United Kingdom inflation. *Econometrica, 50*(4), 987–1007. https://doi.org/10.2307/1912773
 - Harvey, C. R., Liu, Y., & Zhu, H. (2016). …and the cross-section of expected returns. *The Review of Financial Studies, 29*(1), 5–68. https://doi.org/10.1093/rfs/hhv059
