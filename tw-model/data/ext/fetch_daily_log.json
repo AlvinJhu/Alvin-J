@@ -1,0 +1,54 @@
+{
+  "run_at": "2026-11-22T14:27:24.379186Z",
+  "twse_monthly_rc": 0,
+  "finmind": {
+    "inst": [
+      "2016-01-04",
+      "2026-11-20",
+      2651
+    ],
+    "margin": [
+      "2016-01-04",
+      "2026-11-20",
+      2651
+    ],
+    "inst_names": [
+      "Dealer_Hedging",
+      "Dealer_self",
+      "Foreign_Dealer_Self",
+      "Foreign_Investor",
+      "Investment_Trust",
+      "total"
+    ],
+    "margin_names": [
+      "MarginPurchase",
+      "MarginPurchaseMoney",
+      "ShortSale"
+    ]
+  },
+  "fut_tx_daily": [
+    "2026-11-20",
+    "2026-11-20",
+    314
+  ],
+  "fut_tx_inst": [
+    "2026-11-20",
+    "2026-11-20",
+    36
+  ],
+  "opt_txo_inst": [
+    "2026-11-20",
+    "2026-11-20",
+    72
+  ],
+  "vix": [
+    "2026-09-22",
+    "2026-11-20",
+    43
+  ],
+  "usdtwd": [
+    "2026-11-13",
+    "2026-11-22",
+    6
+  ]
+}
