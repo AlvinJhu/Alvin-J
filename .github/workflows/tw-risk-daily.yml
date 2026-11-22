@@ -1,0 +1,39 @@
+name: tw-risk-daily
+# 使用者同意（2026-11-22「我同意建立排程」）：每個交易日收盤後抓最新資料、跑 risk_model.py（v3.2），結果 commit 回 LIVE 分支。
+# 排程只在預設分支（main）上的 workflow 生效；程式與資料一律從 LIVE 分支取用。
+on:
+  schedule:
+    - cron: "17 11 * * 1-5"   # 台北 19:17（週一到週五）
+  workflow_dispatch:
+  push:
+    branches: [claude/project-thread-klgrmx]
+    paths: [.github/workflows/tw-risk-daily.yml]
+permissions:
+  contents: write
+concurrency: tw-risk-daily
+env:
+  LIVE: claude/project-thread-klgrmx
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: "${{ env.LIVE }}"}
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip, cache-dependency-path: tw-model/requirements.txt}
+      - run: pip install -r tw-model/requirements.txt yfinance requests
+      - name: 抓最新資料
+        run: python tw-model/fetch_local.py --daily
+        env: {FINMIND_TOKEN: "${{ secrets.FINMIND_TOKEN }}"}
+      - name: 跑風險模型
+        run: python tw-model/risk_model.py | tail -1
+      - name: commit 回 LIVE 分支
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tw-model/data tw-model/reports
+          git commit -m "Daily risk update $(jq -r .date tw-model/reports/risk_today.json)" || echo "nothing to commit"
+          git pull --no-rebase --no-edit origin "$LIVE" || true
+          git push origin HEAD:"$LIVE"
