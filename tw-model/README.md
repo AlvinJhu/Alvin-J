@@ -186,3 +186,86 @@ HAR 類模型在 R²、MAE 勝過 EWMA，但 QLIKE（對低估較敏感）EWMA �
 - López de Prado, M. (2018). *Advances in financial machine learning*. Wiley.
 - Moreira, A., & Muir, T. (2017). Volatility-managed portfolios. *The Journal of Finance, 72*(4), 1611–1644. https://doi.org/10.1111/jofi.12513
 - Welch, I., & Goyal, A. (2008). A comprehensive look at the empirical performance of equity premium prediction. *The Review of Financial Studies, 21*(4), 1455–1508. https://doi.org/10.1093/rfs/hhm014
+
+## 其餘四種華爾街模型（2026-11-22，`garch_eval.py`、`ml_eval.py`、`factor_eval.py`、`statarb_eval.py`）
+CTA 見上節（v4）。比較基準：v3.1 保留期（2023 起）Sharpe 1.66、最大回撤 -18.7%；買進持有 1.19、-28.7%。全部為 walk-forward 樣本外、扣成本、規則事先固定，變體全列。
+
+| 模型 | 保留期最佳結果 | 顯著性 | 結論 |
+|---|---|---|---|
+| 1. 多因子（Barra 型，月頻個股） | 因子模型最小變異 Sharpe 1.35、回撤 -10.7%；多因子前 1/5 1.42、-22.0%；市值加權宇宙 1.22、-24.4% | 對市值加權 Sharpe 差 95% 區間都含 0；5 個風格因子全期 NW t 值都 < 2 | 不採用；最小變異的低回撤值得當參考 |
+| 2. 風險模型（GARCH/EWMA＋VaR/CVaR） | 把 v3.1 的波動預測換成 GARCH-t 1.69、GJR 1.67、EWMA 1.70；GJR CVaR 預算＋大跌警訊 1.71、回撤 -15.8% | 對 v3.1 差 +0.02～+0.05，區間都含 0 | 部位不改；VaR/CVaR 報告改用濾波歷史模擬（唯一通過回測） |
+| 3. CTA（v4，另見上節） | 50/50 混合 1.29 | 輸 v3.1，區間不含 0 | 不採用 |
+| 4. 統計套利 | 跨月價差每筆毛利 -1.6 點；短期反轉最佳 Sharpe 0.47；個股配對毛利 Sharpe -0.60 | Holm 校正後全部不顯著 | 不採用：扣成本前就沒有超額報酬 |
+| 5. 機器學習（梯度提升樹、神經網路） | 24 組全期 AUC 0.447–0.519；保留期最高 0.542（邏輯迴歸 20 日） | Holm 校正 p 全為 1；20 日報酬樣本外 R² 全部為負 | 未達 0.55，不採用 |
+
+**總結：v3.1 仍是最佳。** 五種模型裡，只有「風險」類（v3.1、GARCH、最小變異）在保留期勝過買進持有，而且勝在降低回撤，不是預測方向。
+
+### 1. 多因子（`factor_eval.py`）
+資料：`fetch_stocks.py`（GitHub Actions，2026-11-22 使用者同意）抓證交所每月最後交易日全市場快照 2015-01～2026-11（143 個月、1,535 檔，含已下市股票，無存活偏誤）：收盤價、本益比、股價淨值比、殖利率、發行股數。2017-02 收盤價缺漏一個月。
+設計：每月市值前 300 大普通股；次月價格報酬＋殖利率/12（股數變動 > 2% 改用市值變動）；暴露 = 規模（log 市值）、價值（B/P、E/P）、動能（12-1 月）、品質（ROE = P/B ÷ P/E）、低波（−12 月報酬標準差）；每月 √市值加權橫斷面迴歸。缺產業因子（證交所快照無產業別），Barra 正式模型有。
+
+因子報酬（`reports/factor_returns.csv`，2016-02～2026-10，133 個月）：
+| 因子 | 年化報酬 | IR | Newey-West t |
+|---|---|---|---|
+| 市場 | 14.6% | 0.78 | 2.86 |
+| 規模（大型股） | 2.6% | 0.48 | 1.81 |
+| 價值 | 2.9% | 0.48 | 1.55 |
+| 動能 | 2.0% | 0.26 | 0.90 |
+| 品質 | 2.7% | 0.50 | 1.68 |
+| 低波 | -4.1% | -0.38 | -1.28 |
+台股是「大型股溢酬」（台積電等權值股主導），與美股小型股溢酬相反；低波因子為負，與 Frazzini & Pedersen (2014) 相反。五個風格因子都達不到 t > 3 的多重檢定門檻（Harvey et al., 2016）。
+
+風險模型（`reports/factor_risk_bias.csv`）：偏誤統計量 b 全期 1.19–1.25（1 為準確），保留期 1.01–1.17；即因子共變異模型低估風險約 2 成，主要在 2020–2022。
+
+組合（`reports/factor_portfolios.csv`，月調，單邊換手成本 0.19%）：
+| 組合 | 保留期 CAGR | 波動 | Sharpe | 最大回撤 | 年換手 |
+|---|---|---|---|---|---|
+| 市值加權前 300 大 | 30.5% | 24.5% | 1.22 | -24.4% | 0.1 |
+| 多因子綜合前 1/5（市值加權） | 35.7% | 23.7% | 1.42 | -22.0% | 4.8 |
+| 因子模型最小變異（單檔 ≤ 5%） | 15.9% | 11.4% | 1.35 | -10.7% | 4.2 |
+注意：月頻個股組合，與 v3.1（日頻指數）不完全可比；兩個組合對基準的 Sharpe 差區間皆含 0。
+
+### 2. GARCH / EWMA / VaR / CVaR（`garch_eval.py`）
+每 63 日擴張視窗重估，逐日濾波，完全樣本外。
+20 日波動預測（保留期，`reports/garch_vol_forecast.csv`）：R² HAR 0.23、GARCH 0.22、GJR 0.17、EWMA 0.08；QLIKE EWMA 0.48、GARCH 0.48、HAR 0.59。GARCH 與 HAR 互有勝負，沒有一個全面勝出。
+次日 VaR 回測（保留期 936 天，`reports/garch_var_backtest.csv`）：
+| 模型 | 99% VaR 穿越率（應 1%） | Kupiec p | ES 回測 Z2（0 為準，負＝低估） |
+|---|---|---|---|
+| EWMA 常態 | 2.5% | 0.000 | -1.86 |
+| GARCH 常態 | 2.0% | 0.005 | -1.49 |
+| GARCH-t | 1.5% | 0.16 | -0.58 |
+| GJR-t | 1.7% | 0.05 | -0.79 |
+| 歷史模擬 500 日 | 2.0% | 0.005 | -1.04 |
+| 濾波歷史模擬（GJR 殘差） | 1.4% | 0.26 | -0.45 |
+常態分配 VaR 低估尾部約一倍；濾波歷史模擬在 95%、99% 兩段期間都通過 Kupiec 與 Christoffersen 檢定。
+部位（`reports/garch_strategy.csv`、`garch_sharpe_diff.csv`）：沿用 v3.1 全部參數，只換波動預測，保留期 Sharpe 1.67–1.71，與 v3.1 差異區間皆含 0。結論：波動預測方法可互換，v3.1 的效果主要來自大跌警訊，不是波動模型。
+
+### 4. 統計套利（`statarb_eval.py`）
+| 測試 | 保留期 | 全期 |
+|---|---|---|
+| A. 台指期近月/次月價差 z > 2 回歸（成本 7.2 點/來回） | 76 筆，每筆毛利 -2.1 點、淨 -9.3 點 | 205 筆，毛利 -1.6 點 |
+| B. 指數 3 日反轉（台指期，成本 0.01%），8 個變體 | 最佳「5 日只做多」Sharpe 0.47 | 0.35，Holm p 0.78 |
+| C. 個股配對（距離法，2015 年底市值前 100 大，20 對，2σ 開倉） | 零成本 Sharpe -0.60；含成本 -1.34 | 零成本 -0.47 |
+價差偏離多半來自除息、換倉等基本面因素，不會回歸；配對交易與 Do & Faff (2010) 一致，獲利已消失。C 的 yfinance 日線缺 9 檔（後來合併、下市，如 2311、2325、2823），有存活偏誤，但方向會讓結果偏樂觀，結論不變。
+
+### 5. 機器學習（`ml_eval.py`）
+4 個模型（邏輯迴歸、XGBoost、HistGradientBoosting、兩層神經網路）× 3 標的（1/5/20 日）× 2 特徵組（45 個 2016 起、58 個含期貨選擇權 2018-08 起），超參數固定不調。
+- 全期 AUC 0.447–0.519，沒有一組下界高於 0.5；保留期最高 0.542（邏輯迴歸 20 日），樹模型、神經網路沒有勝過線性模型
+- 20 日報酬迴歸樣本外 R² 全部為負（-3%～-550%，神經網路最差），對照 Gu et al. (2020) 個股月報酬 R² 約 0.4%，指數時間序列更難
+- 依機率傾斜部位的 12 個策略，保留期 Sharpe 0.47–1.49，全部低於只做波動目標（1.22）以外的 v3.1
+- 重要特徵前幾名是 rv66、自營商期貨淨部位、opt_fgn_bias：都是「風險」變數，不是方向變數，與 v3.1 的發現一致
+
+### 參考文獻
+Acerbi, C., & Szekely, B. (2014). Backtesting expected shortfall. *Risk, 27*(11), 76–81.
+Bollerslev, T. (1986). Generalized autoregressive conditional heteroskedasticity. *Journal of Econometrics, 31*(3), 307–327.
+Christoffersen, P. F. (1998). Evaluating interval forecasts. *International Economic Review, 39*(4), 841–862.
+Do, B., & Faff, R. (2010). Does simple pairs trading still work? *Financial Analysts Journal, 66*(4), 83–95.
+Fama, E. F., & French, K. R. (1993). Common risk factors in the returns on stocks and bonds. *Journal of Financial Economics, 33*(1), 3–56.
+Fama, E. F., & French, K. R. (2015). A five-factor asset pricing model. *Journal of Financial Economics, 116*(1), 1–22.
+Frazzini, A., & Pedersen, L. H. (2014). Betting against beta. *Journal of Financial Economics, 111*(1), 1–25.
+Gatev, E., Goetzmann, W. N., & Rouwenhorst, K. G. (2006). Pairs trading: Performance of a relative-value arbitrage rule. *Review of Financial Studies, 19*(3), 797–827.
+Glosten, L. R., Jagannathan, R., & Runkle, D. E. (1993). On the relation between the expected value and the volatility of the nominal excess return on stocks. *Journal of Finance, 48*(5), 1779–1801.
+Gu, S., Kelly, B., & Xiu, D. (2020). Empirical asset pricing via machine learning. *Review of Financial Studies, 33*(5), 2223–2273.
+Harvey, C. R., Liu, Y., & Zhu, H. (2016). … and the cross-section of expected returns. *Review of Financial Studies, 29*(1), 5–68.
+Kupiec, P. H. (1995). Techniques for verifying the accuracy of risk measurement models. *Journal of Derivatives, 3*(2), 73–84.
+Moskowitz, T. J., Ooi, Y. H., & Pedersen, L. H. (2012). Time series momentum. *Journal of Financial Economics, 104*(2), 228–250.
