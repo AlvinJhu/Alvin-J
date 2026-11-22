@@ -159,6 +159,11 @@ def main():
         "v2 波動目標（過去20日波動）": pd.Series(M.exposure(np.full(len(test), .6), vol20.values), index=test),
         "買進持有": pd.Series(1.0, index=test),
     }
+    wv3 = cands["v3 風險模型（選定參數）"]  # 近 120 日走勢（每日預警／週報用；機率為樣本外 walk-forward 值）
+    hz = pd.DataFrame({"close": df.close.reindex(test), "p_drawdown": p_dd, "pred_vol": vol_fc,
+                       "warning": warn_active(p_dd.values, best.thr, int(best.hold)), "suggest_equity": wv3}).tail(120)
+    if "opt_fgn_bias" in X: hz["opt_fgn_bias"] = X.opt_fgn_bias.reindex(hz.index)
+    hz.round(4).rename_axis("date").to_csv(os.path.join(R, PFX + "history.csv"), encoding="utf-8-sig")
     rows = []
     for n, w in cands.items():
         s = strat(w, r) if n != "買進持有" else r
