@@ -145,6 +145,10 @@ def main():
         st = M.stats(s[ins]); grid.append({"target": tg, "cut": cut, "thr": thr, "band": band, "hold": hold, **st})
     grid = pd.DataFrame(grid).sort_values("Sharpe", ascending=False)
     best = grid.iloc[0]; print("2018–2022 選出參數：", best[["target", "cut", "thr", "band", "hold", "Sharpe"]].to_dict())
+    if "--grid" not in ARGS:  # 2026-11-22 使用者決定：大跌警訊減碼到 1/2（原 1/4），其餘沿用 v3.1；--grid 改用網格選出值
+        cut = float(ARGS[ARGS.index("--cut") + 1]) if "--cut" in ARGS else 0.5  # --cut 0.25 改回 v3.1
+        best = best.copy(); best[["target", "cut", "thr", "band", "hold"]] = [0.22, cut, 0.25, 0.2, 10]
+        print("採用固定參數（v3.2）：", best[["target", "cut", "thr", "band", "hold"]].to_dict())
     grid.to_csv(os.path.join(R, PFX + "param_grid_insample.csv"), index=False, encoding="utf-8-sig")
 
     vol20 = (lr.rolling(20).std() * ANN).reindex(test)
