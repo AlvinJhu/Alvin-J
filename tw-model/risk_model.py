@@ -200,6 +200,17 @@ def main():
     if pd_today > best.thr: alerts.append(f"大跌機率 {pd_today:.0%} 超過 {best.thr:.0%}")
     if warn and not prev_warn: alerts.append(f"觸發減碼：持股降到 {w_today:.0%}")
     if prev_warn and not warn: alerts.append(f"警訊持有期滿：可回到正常部位 {w_today:.0%}")
+    # 資料新鮮度：各輸入最後一筆日期，落後台股最新交易日超過 3 個交易日就警告（避免像 VIX 停在 9/22 卻沒人發現）
+    ext = os.path.join(M.D, "ext"); fresh = {}
+    for k, fn, col in (("vix", "vix.csv", "DATE"), ("usdtwd", "usdtwd.csv", "Date"), ("sox", "sox.csv", "date"),
+                       ("inst", "inst_finmind.csv", "date"), ("margin", "margin_finmind.csv", "date"),
+                       ("opt_txo_inst", "opt_txo_inst.csv", "date"), ("fut_tx_inst", "fut_tx_inst.csv", "date")):
+        p = os.path.join(ext, fn)
+        if os.path.exists(p): fresh[k] = str(pd.read_csv(p, usecols=[col])[col].max())[:10]
+    today["data_last_date"] = fresh
+    for k, d in fresh.items():
+        lag = int((df.index > pd.Timestamp(d)).sum())  # 之後還有幾個台股交易日
+        if lag > 3: alerts.append(f"資料過期：{k} 停在 {d}（落後 {lag} 個交易日）")
     today["alerts"] = alerts
     if warn:  # 若之後都不再超過門檻，最快哪天收盤後解除
         k = int(best.hold) - 1 - (len(hist_p) - 1 - int(np.where(hist_p > best.thr)[0][-1]))
