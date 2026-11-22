@@ -5,7 +5,7 @@
 2. 費半 ^SOX、美債 10 年 ^TNX：yfinance
 3. 與 data/inst.jsonl、margin.jsonl（證交所原始檔，近 375 天）逐日比對，確認兩個來源一致
 輸出：data/ext/inst_finmind.csv、margin_finmind.csv、sox.csv、tnx.csv
-用法：python fetch_local.py [--token FinMind_token]；python fetch_local.py --futures（期貨、選擇權未平倉）；--optdaily（台指選擇權每日買賣權成交量、未平倉彙總）
+用法：python fetch_local.py --daily（每日排程：只補最新資料，供 risk_model.py 用）；python fetch_local.py [--token FinMind_token]；python fetch_local.py --futures（期貨、選擇權未平倉）；--optdaily（台指選擇權每日買賣權成交量、未平倉彙總）
 """
 import os, sys, json, time, datetime as dt
 import pandas as pd, numpy as np, requests
@@ -170,8 +170,68 @@ def long_history():
     json.dump(log, open(os.path.join(EXT, "fetch_long_log.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=2)
     print(log)
 
+FUT_KEYS = {"fut_tx_daily": ["date", "futures_id", "contract_date", "trading_session"],
+            "fut_tx_inst": ["futures_id", "date", "institutional_investors"],
+            "opt_txo_inst": ["option_id", "date", "call_put", "institutional_investors"]}
+
+def _append_yf(tk, fn, cols, start):
+    """yfinance 新資料接在舊檔後面（保留原欄位格式）。"""
+    import yfinance as yf
+    p = os.path.join(EXT, fn); old = pd.read_csv(p); dc = old.columns[0]
+    last = pd.Timestamp(old[dc].iloc[-1])
+    d = yf.download(tk, start=str((last - pd.Timedelta(days=start)).date()), progress=False, auto_adjust=False)
+    d.columns = [c[0] if isinstance(c, tuple) else c for c in d.columns]
+    d = d.dropna(subset=["Close"]); d = d[d.index > last]
+    if len(d):
+        new = pd.DataFrame({dc: d.index.strftime("%Y-%m-%d")})
+        for c, f in cols.items(): new[c] = f(d).values
+        pd.concat([old, new[old.columns]], ignore_index=True).to_csv(p, index=False)
+    return [str(last.date()), (str(d.index[-1].date()) if len(d) else None), len(d)]
+
+def daily_update(tok=None):
+    """--daily：每交易日排程用。證交所本月指數與成交金額、FinMind 法人融資（全期 2 次請求）、
+    期貨選擇權未平倉（只抓近 15 天再合併）、yfinance 費半美債（全期）、VIX 與美元台幣（接在舊檔後）。"""
+    import subprocess
+    log = {"run_at": dt.datetime.utcnow().isoformat() + "Z"}
+    ym = dt.date.today().replace(day=1) - dt.timedelta(days=1)
+    r = subprocess.run([sys.executable, os.path.join(HERE, "fetch_twse.py"), "monthly", f"{ym.year}-{ym.month:02d}"],
+                       capture_output=True, text=True, timeout=3600)
+    log["twse_monthly_rc"] = r.returncode
+    main_log = {}
+    try:
+        main()  # FinMind 法人融資 + 費半美債，寫 fetch_log.json
+        main_log = json.load(open(os.path.join(EXT, "fetch_log.json"), encoding="utf-8"))
+    except Exception as e:
+        log["main_error"] = repr(e)
+    log["finmind"] = main_log.get("finmind", main_log.get("finmind_error"))
+    h = {"Authorization": f"Bearer {tok}"} if tok else {}
+    for name, (ds, did) in FUT.items():
+        p = os.path.join(EXT, f"{name}.csv")
+        try:
+            old = pd.read_csv(p, dtype=str); start = (pd.Timestamp(old.date.max()) - pd.Timedelta(days=15)).date()
+            j = requests.get(API, params={"dataset": ds, "data_id": did, "start_date": str(start), "end_date": TODAY},
+                             headers=h, timeout=120).json()
+            if j.get("status") != 200: raise RuntimeError(j.get("msg"))
+            new = pd.DataFrame(j["data"]).astype(str)
+            out = pd.concat([old, new[old.columns]], ignore_index=True).drop_duplicates(FUT_KEYS[name], keep="last")
+            out.sort_values("date", kind="stable").to_csv(p, index=False)
+            log[name] = [old.date.max(), out.date.max(), len(new)]
+        except Exception as e:
+            log[name] = repr(e)
+        time.sleep(2)
+    for k, args in {"vix": ("^VIX", "vix.csv", {"OPEN": lambda d: d.Open.round(4), "HIGH": lambda d: d.High.round(4),
+                                                 "LOW": lambda d: d.Low.round(4), "CLOSE": lambda d: d.Close.round(4)}),
+                    "usdtwd": ("TWD=X", "usdtwd.csv", {"Country": lambda d: pd.Series("Taiwan", index=d.index),
+                                                       "Exchange rate": lambda d: d.Close.round(4)})}.items():
+        try: log[k] = _append_yf(args[0], args[1], args[2], 5)
+        except Exception as e: log[k] = repr(e)
+    json.dump(log, open(os.path.join(EXT, "fetch_daily_log.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=2, default=str)
+    print(json.dumps(log, ensure_ascii=False, indent=2, default=str))
+
 if __name__ == "__main__":
-    if "--long" in sys.argv:
+    if "--daily" in sys.argv:
+        daily_update(os.environ.get("FINMIND_TOKEN"))
+    elif "--long" in sys.argv:
         long_history()
     elif "--optdaily" in sys.argv:
         opt_daily(os.environ.get("FINMIND_TOKEN"))

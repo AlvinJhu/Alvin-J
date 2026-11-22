@@ -194,6 +194,16 @@ def main():
              "opt_fgn_bias": (round(float(X.opt_fgn_bias.iloc[-1]), 4) if "opt_fgn_bias" in X else None),
              "warning_active": warn, "last_warning_day": (str(over.index[-1].date()) if len(over) else None),
              "suggest_equity": round(w_today, 3), "params": best[["target", "cut", "thr", "band", "hold"]].to_dict()}
+    # 通知判斷（每日排程用）：前一交易日狀態取 risk_history.csv 最後一列
+    prev_warn = bool(hz.warning.iloc[-1]) if len(hz) else False
+    alerts = []
+    if pd_today > best.thr: alerts.append(f"大跌機率 {pd_today:.0%} 超過 {best.thr:.0%}")
+    if warn and not prev_warn: alerts.append(f"觸發減碼：持股降到 {w_today:.0%}")
+    if prev_warn and not warn: alerts.append(f"警訊持有期滿：可回到正常部位 {w_today:.0%}")
+    today["alerts"] = alerts
+    if warn:  # 若之後都不再超過門檻，最快哪天收盤後解除
+        k = int(best.hold) - 1 - (len(hist_p) - 1 - int(np.where(hist_p > best.thr)[0][-1]))
+        today["warning_trading_days_left"] = k
     json.dump(today, open(os.path.join(R, PFX + "today.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=2)
     print(json.dumps(today, ensure_ascii=False))
 

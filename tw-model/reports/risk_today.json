@@ -24,5 +24,7 @@
     "thr": 0.25,
     "band": 0.2,
     "hold": 10.0
-  }
+  },
+  "alerts": [],
+  "warning_trading_days_left": 2
 }
