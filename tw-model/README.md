@@ -7,6 +7,7 @@
 - `data/`：原始資料（jsonl）、`data/ext/` VIX、USD/TWD
 - `risk_model.py`：v3 風險模型（波動預測、大跌機率、部位），`python risk_model.py`，輸出 `reports/risk_*`
 - `futures_eval.py`：期貨、選擇權未平倉因子驗證（`python fetch_local.py --futures` 取資料），輸出 `reports/futures_*`
+- `cta_model.py`：v4 CTA（時間序列動能＋波動度目標，含台指期連續報酬），輸出 `reports/cta_*`
 - `bb_eval.py`：布林通道驗證；`pc_eval.py`：台指選擇權 P/C 比驗證；`rally_eval.py`：大漲機率驗證；`crash_case_study.py`：歷次大跌前模型讀數
 - `reports/`：`model_accuracy.csv`、`backtest_summary.csv`、`calibration_20d.csv`、`today.json`、`equity.png`
 
@@ -147,6 +148,23 @@ HAR 類模型在 R²、MAE 勝過 EWMA，但 QLIKE（對低估較敏感）EWMA �
 部位（同一組 v3.1 參數，不重選）保留期 Sharpe：v3.1 1.66／加布林 1.42；最大回撤 -18.7%／-21.9%。
 結論：不採用。帶寬與 22 日波動相關 0.71，資訊已在模型內；%B 單獨在兩段都約 0.6（收在下軌附近時大跌機率較高，屬順勢而非均值回歸），但區間含 0.5，加入後保留期反而變差。
 
+## v4 CTA：時間序列動能＋波動度目標（`cta_model.py`，2026-11-22）
+設計事先固定、不調參：訊號 = 過去 21/63/126/252 日報酬正負號等權平均（Moskowitz et al., 2012; Hurst et al., 2017）；部位 = 訊號 × min(1, 22%/預測波動)，波動預測、目標、調整帶、警訊規則全沿用 v3.1。成本每單位換手 0.1%。另以台指期近月（最大未平倉合約）連續報酬重跑，確認可放空的真實標的結論相同。
+與 v3.1 同樣本（2020-06～2026-11），加權指數：
+| 策略 | 2023 前 Sharpe | 保留期 Sharpe | 保留期 MDD | 年換手 |
+|---|---|---|---|---|
+| A 12 月動能 多空 | 1.25 | 0.51 | -31.9% | 7 |
+| B 多期動能 多空 | 0.70 | 0.68 | -36.1% | 19 |
+| C 多期動能 只做多 | 0.74 | 0.79 | -32.4% | 16 |
+| D = C＋v3.1 大跌警訊 | 0.81 | 1.16 | -23.3% | 12 |
+| E 各半 v3.1＋B | 1.00 | 1.29 | -22.7% | 11 |
+| **v3.1 風險模型（現行）** | 0.82 | **1.66** | **-18.7%** | 3 |
+| 只做波動目標 | 0.54 | 1.21 | -27.4% | 1 |
+| 買進持有 | 0.55 | 1.19 | -28.7% | 0 |
+保留期 Sharpe 差（63 日區塊 bootstrap 95% 區間）：D − v3.1 = -0.50（-1.19～-0.09）；E − v3.1 = -0.37（-0.81～-0.06）；C − 只做波動目標 = -0.42（-1.25～0.20）。台指期結果相同。
+大跌區段：2022 年慢跌（-29.6%）B 賺 +7.8%、v3.1 -21.8%，這是 CTA 的強項；但 2024-07～2025-04、2026-10 起這類急跌後 V 轉，動能訊號落後，B -25.3%／-10.7%，遠差於 v3.1 的 -13.1%／-5.8%。
+結論：不採用。台股動能沒有超越「只做波動目標」，更輸給 v3.1；21 日短回看期造成高換手（12–19 次／年）。疊加大跌警訊確實讓 CTA 變好（C→D 保留期 0.79→1.16），再次驗證警訊規則有效，但主體仍以 v3.1 為準。動能只在 2022 型的長空頭有分散價值，可作為觀察指標：目前 4 個回看期 3 負 1 正（訊號 -0.5）。
+
 ## 限制
 - 雲端工作階段連不到證交所、FinMind、Yahoo；資料用 GitHub Actions 或本機 `fetch_local.py` 更新
 - 尚未納入台指 VIX；選擇權最大未平倉履約價（支撐/壓力）換月時資料不穩，未採用
@@ -158,8 +176,10 @@ HAR 類模型在 R²、MAE 勝過 EWMA，但 QLIKE（對低估較敏感）EWMA �
 - Corsi, F. (2009). A simple approximate long-memory model of realized volatility. *Journal of Financial Econometrics, 7*(2), 174–196. https://doi.org/10.1093/jjfinec/nbp001
 - Engle, R. F. (1982). Autoregressive conditional heteroscedasticity with estimates of the variance of United Kingdom inflation. *Econometrica, 50*(4), 987–1007. https://doi.org/10.2307/1912773
 - Harvey, C. R., Liu, Y., & Zhu, H. (2016). …and the cross-section of expected returns. *The Review of Financial Studies, 29*(1), 5–68. https://doi.org/10.1093/rfs/hhv059
+- Hurst, B., Ooi, Y. H., & Pedersen, L. H. (2017). A century of evidence on trend-following investing. *The Journal of Portfolio Management, 44*(1), 15–29. https://doi.org/10.3905/jpm.2017.44.1.015
 - J.P. Morgan/Reuters. (1996). *RiskMetrics—Technical document* (4th ed.).
 - Künsch, H. R. (1989). The jackknife and the bootstrap for general stationary observations. *The Annals of Statistics, 17*(3), 1217–1241. https://doi.org/10.1214/aos/1176347265
+- Moskowitz, T. J., Ooi, Y. H., & Pedersen, L. H. (2012). Time series momentum. *Journal of Financial Economics, 104*(2), 228–250. https://doi.org/10.1016/j.jfineco.2011.11.003
 - Pan, J., & Poteshman, A. M. (2006). The information in option volume for future stock prices. *The Review of Financial Studies, 19*(3), 871–908. https://doi.org/10.1093/rfs/hhj024
 - Parkinson, M. (1980). The extreme value method for estimating the variance of the rate of return. *The Journal of Business, 53*(1), 61–65. https://doi.org/10.1086/296071
 - Patton, A. J. (2011). Volatility forecast comparison using imperfect volatility proxies. *Journal of Econometrics, 160*(1), 246–256. https://doi.org/10.1016/j.jeconom.2010.03.034
