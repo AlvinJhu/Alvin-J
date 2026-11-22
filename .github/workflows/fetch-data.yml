@@ -1,0 +1,26 @@
+name: fetch-stocks
+# 使用者同意（2026-11-22「同意」用 Actions 抓個股資料）：雲端工作階段連不到證交所、Yahoo，改由 Actions 抓個股月底快照與前 100 大日線並 commit 回分支；用完即刪
+on:
+  push:
+    branches: [claude/project-thread-cw8rrg]
+    paths: [.github/workflows/fetch-data.yml]
+permissions:
+  contents: write
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install pandas numpy requests yfinance
+      - run: python tw-model/fetch_stocks.py
+      - if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tw-model/data/ext
+          git commit -m "Add TWSE monthly cross-section snapshots and top-100 daily prices via Actions" || echo "nothing to commit"
+          git pull --no-rebase --no-edit origin claude/project-thread-cw8rrg || true
+          git push
