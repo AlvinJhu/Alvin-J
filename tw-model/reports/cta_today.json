@@ -1,0 +1,22 @@
+{
+  "date": "2026-11-20",
+  "close": 36033.29,
+  "tsmom_signs": {
+    "21d": -1.0,
+    "63d": -1.0,
+    "126d": -1.0,
+    "252d": 1.0
+  },
+  "tsmom_signal": -0.5,
+  "vol_forecast_last_backtest_day": 0.5028,
+  "weights_last_backtest_day": {
+    "CTA-A 12月動能 多空": 0.643,
+    "CTA-B 多期動能 多空": -0.306,
+    "CTA-C 多期動能 只做多": 0.0,
+    "CTA-D 只做多＋大跌警訊": 0.0,
+    "v3.1 風險模型（現行）": 0.238,
+    "E 各半：v3.1＋CTA-B": -0.034,
+    "波動目標（無動能）": 0.643
+  },
+  "note": "最後回測日權重以 walk-forward 預測計算；今日即時部位以 risk_today.json 的波動與警訊為準"
+}
