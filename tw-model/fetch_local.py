@@ -153,8 +153,27 @@ def main():
     json.dump(log, open(os.path.join(EXT, "fetch_log.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=2, default=str)
     print(json.dumps(log, ensure_ascii=False, indent=2, default=str))
 
+def long_history():
+    """--long：長期資料（v3 長樣本驗證用）。yfinance ^TWII（1997 起，含高低點）、^SOX 全期，存 twii_yf.csv、sox_long.csv。
+    證交所加權指數 1999 起請另跑：python fetch_twse.py monthly 1999-01"""
+    import yfinance as yf
+    log = {}
+    for k, tk in {"twii_yf": "^TWII", "sox_long": "^SOX"}.items():
+        try:
+            d = yf.download(tk, start="1985-01-01", progress=False, auto_adjust=False)
+            d.columns = [c[0] if isinstance(c, tuple) else c for c in d.columns]
+            d = d.dropna(subset=["Close"]); d.index.name = "date"
+            d[["Open", "High", "Low", "Close", "Volume"]].rename(columns=str.lower).to_csv(os.path.join(EXT, f"{k}.csv"))
+            log[k] = [str(d.index.min().date()), str(d.index.max().date()), len(d)]
+        except Exception as e:
+            log[k] = repr(e)
+    json.dump(log, open(os.path.join(EXT, "fetch_long_log.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    print(log)
+
 if __name__ == "__main__":
-    if "--optdaily" in sys.argv:
+    if "--long" in sys.argv:
+        long_history()
+    elif "--optdaily" in sys.argv:
         opt_daily(os.environ.get("FINMIND_TOKEN"))
     elif "--futures" in sys.argv:
         futures(sys.argv[sys.argv.index("--token") + 1] if "--token" in sys.argv else os.environ.get("FINMIND_TOKEN"))
