@@ -1,0 +1,45 @@
+name: public-release-sync
+# 使用者要求（2026-11-23「模型更新的時候 可以自動更新嗎」）：正式版模型程式或公開 SKILL 變動時，自動重新產生公開包 zip。
+# 來源：LIVE 分支的 tw-model/*.py（不取 data/、reports/）；打包規則與私人字串檢查在 public-release/build.py。
+# 有變動才 commit 到 main；build.py 檢查失敗時整個 job 失敗，不會更新公開包。
+on:
+  schedule:
+    - cron: "47 12 * * *"   # 台北 20:47，每天檢查一次正式版程式是否有更新
+  push:
+    branches: [main]
+    paths:
+      - "public-release/**"
+      - "!public-release/dist/**"
+      - ".github/workflows/public-release-sync.yml"
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency: public-release-sync
+env:
+  LIVE: claude/project-thread-klgrmx
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: main}
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: 取正式版模型程式
+        run: |
+          git fetch --depth=1 origin "$LIVE"
+          mkdir -p "$RUNNER_TEMP/src"
+          git archive FETCH_HEAD tw-model | tar -x -C "$RUNNER_TEMP/src" --exclude=tw-model/data --exclude=tw-model/reports
+      - name: 重新打包（含私人字串檢查）
+        run: python public-release/build.py --src "$RUNNER_TEMP/src/tw-model"
+      - name: 有變動才 commit 到 main
+        run: |
+          git add public-release
+          if git diff --cached --quiet; then echo "公開包沒有變動"; exit 0; fi
+          git diff --cached --stat
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Auto-update public release packages"
+          git pull --rebase origin main
+          git push origin HEAD:main

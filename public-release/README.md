@@ -7,3 +7,6 @@
 
 授權：Alvin-J 原創，[CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/deed.zh-hant)（須標示出處、禁止商業使用）。
 僅供研究與學習，不構成投資建議，詳見各套件的 DISCLAIMER.md。
+
+## 自動更新
+正式版模型程式或本資料夾的 SKILL 更新後，GitHub Actions 會用 `build.py` 自動移除私人資訊、重新打包並更新上面的 zip（每天檢查一次）。
