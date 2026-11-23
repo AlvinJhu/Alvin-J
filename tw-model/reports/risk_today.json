@@ -1,23 +1,23 @@
 {
-  "date": "2026-11-20",
-  "close": 36033.29,
-  "pred_vol_20d_ann": 0.5024,
-  "vol_percentile_since_2016": 0.991,
-  "p_drawdown_7pct_within_20d": 0.072,
+  "date": "2026-11-23",
+  "close": 36811.89,
+  "pred_vol_20d_ann": 0.4288,
+  "vol_percentile_since_2016": 0.965,
+  "p_drawdown_7pct_within_20d": 0.064,
   "base_rate": 0.111,
   "range_20d_68": [
-    31278,
-    41512
+    32623,
+    41539
   ],
   "range_20d_95": [
-    27304,
-    47554
+    29051,
+    46646
   ],
-  "VaR95_1d_pct": -0.0521,
-  "opt_fgn_bias": 0.0091,
+  "VaR95_1d_pct": -0.0444,
+  "opt_fgn_bias": 0.08,
   "warning_active": false,
   "last_warning_day": "2026-10-29",
-  "suggest_equity": 0.438,
+  "suggest_equity": 0.513,
   "params": {
     "target": 0.22,
     "cut": 0.5,
@@ -26,13 +26,13 @@
     "hold": 10.0
   },
   "data_last_date": {
-    "vix": "2026-11-20",
-    "usdtwd": "2026-11-22",
-    "sox": "2026-11-20",
-    "inst": "2026-11-20",
-    "margin": "2026-11-20",
-    "opt_txo_inst": "2026-11-20",
-    "fut_tx_inst": "2026-11-20"
+    "vix": "2026-11-23",
+    "usdtwd": "2026-11-23",
+    "sox": "2026-11-23",
+    "inst": "2026-11-23",
+    "margin": "2026-11-23",
+    "opt_txo_inst": "2026-11-23",
+    "fut_tx_inst": "2026-11-23"
   },
   "alerts": []
 }
