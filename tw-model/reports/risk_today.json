@@ -25,6 +25,13 @@
     "band": 0.2,
     "hold": 10.0
   },
+  "rebuy_alert": false,
+  "trend_ma200": {
+    "ma200": 41555,
+    "dist_pct": -0.1141,
+    "above": false,
+    "note": "僅供參考，不作買賣依據"
+  },
   "data_last_date": {
     "vix": "2026-11-23",
     "usdtwd": "2026-11-23",
