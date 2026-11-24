@@ -1,23 +1,23 @@
 {
-  "date": "2026-11-23",
-  "close": 36811.89,
-  "pred_vol_20d_ann": 0.4288,
-  "vol_percentile_since_2016": 0.965,
-  "p_drawdown_7pct_within_20d": 0.064,
-  "base_rate": 0.111,
+  "date": "2026-11-24",
+  "close": 40122.35,
+  "pred_vol_20d_ann": 0.4155,
+  "vol_percentile_since_2016": 0.962,
+  "p_drawdown_7pct_within_20d": 0.066,
+  "base_rate": 0.112,
   "range_20d_68": [
-    32623,
-    41539
+    35691,
+    45105
   ],
   "range_20d_95": [
-    29051,
-    46646
+    31897,
+    50469
   ],
-  "VaR95_1d_pct": -0.0444,
-  "opt_fgn_bias": 0.08,
+  "VaR95_1d_pct": -0.0431,
+  "opt_fgn_bias": 0.1057,
   "warning_active": false,
   "last_warning_day": "2026-10-29",
-  "suggest_equity": 0.513,
+  "suggest_equity": 0.53,
   "params": {
     "target": 0.22,
     "cut": 0.5,
@@ -27,19 +27,19 @@
   },
   "rebuy_alert": false,
   "trend_ma200": {
-    "ma200": 41555,
-    "dist_pct": -0.1141,
+    "ma200": 41597,
+    "dist_pct": -0.0355,
     "above": false,
     "note": "僅供參考，不作買賣依據"
   },
   "data_last_date": {
-    "vix": "2026-11-23",
-    "usdtwd": "2026-11-23",
+    "vix": "2026-11-24",
+    "usdtwd": "2026-11-24",
     "sox": "2026-11-23",
-    "inst": "2026-11-23",
+    "inst": "2026-11-24",
     "margin": "2026-11-23",
-    "opt_txo_inst": "2026-11-23",
-    "fut_tx_inst": "2026-11-23"
+    "opt_txo_inst": "2026-11-24",
+    "fut_tx_inst": "2026-11-24"
   },
   "alerts": []
 }
