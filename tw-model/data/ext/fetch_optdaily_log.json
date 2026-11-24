@@ -1,0 +1,54 @@
+{
+  "rows": 2651,
+  "dates": [
+    "2016-01-04",
+    "2026-11-20"
+  ],
+  "columns": [
+    "date",
+    "vol_C",
+    "oi_C",
+    "vol_P",
+    "oi_P",
+    "maxoi_strike_C",
+    "near_oi_C",
+    "maxoi_strike_P",
+    "near_oi_P"
+  ],
+  "tail": [
+    {
+      "date": "2026-11-18",
+      "vol_C": 345604,
+      "oi_C": 256506,
+      "vol_P": 304577,
+      "oi_P": 149409,
+      "maxoi_strike_C": 46000.0,
+      "near_oi_C": 167265,
+      "maxoi_strike_P": 33700.0,
+      "near_oi_P": 113894
+    },
+    {
+      "date": "2026-11-19",
+      "vol_C": 161242,
+      "oi_C": 136941,
+      "vol_P": 112180,
+      "oi_P": 56147,
+      "maxoi_strike_C": 50000.0,
+      "near_oi_C": 22950,
+      "maxoi_strike_P": 49800.0,
+      "near_oi_P": 17227
+    },
+    {
+      "date": "2026-11-20",
+      "vol_C": 306243,
+      "oi_C": 233743,
+      "vol_P": 230541,
+      "oi_P": 94396,
+      "maxoi_strike_C": 50000.0,
+      "near_oi_C": 25288,
+      "maxoi_strike_P": 49800.0,
+      "near_oi_P": 18051
+    }
+  ],
+  "errors": []
+}

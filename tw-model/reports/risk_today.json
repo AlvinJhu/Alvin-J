@@ -1,0 +1,28 @@
+{
+  "date": "2026-11-20",
+  "close": 36033.29,
+  "pred_vol_20d_ann": 0.5165,
+  "vol_percentile_since_2016": 0.992,
+  "p_drawdown_7pct_within_20d": 0.153,
+  "base_rate": 0.111,
+  "range_20d_68": [
+    31154,
+    41677
+  ],
+  "range_20d_95": [
+    27092,
+    47925
+  ],
+  "VaR95_1d_pct": -0.0535,
+  "opt_fgn_bias": 0.0091,
+  "warning_active": true,
+  "last_warning_day": "2026-11-11",
+  "suggest_equity": 0.106,
+  "params": {
+    "target": 0.22,
+    "cut": 0.25,
+    "thr": 0.25,
+    "band": 0.2,
+    "hold": 10.0
+  }
+}

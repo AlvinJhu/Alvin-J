@@ -1,0 +1,25 @@
+{
+  "date": "2026-11-20",
+  "close": 36033.29,
+  "pred_vol_20d_ann": 0.5306,
+  "vol_percentile_since_2016": 0.991,
+  "p_drawdown_7pct_within_20d": 0.288,
+  "base_rate": 0.114,
+  "range_20d_68": [
+    31030,
+    41843
+  ],
+  "range_20d_95": [
+    26882,
+    48300
+  ],
+  "VaR95_1d_pct": -0.055,
+  "opt_fgn_bias": null,
+  "suggest_equity": 0.104,
+  "params": {
+    "target": 0.22,
+    "cut": 0.25,
+    "thr": 0.2,
+    "band": 0.2
+  }
+}
