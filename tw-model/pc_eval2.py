@@ -5,11 +5,16 @@ import sys, os; HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.inse
 3) 對 v3.2 持股規則（0.22 目標、>25% 減碼 1/2、維持 10 日）Sharpe/MDD 的影響
 4) 對 20 日大漲（最高收盤 >+7%）與 20 日漲跌方向的預測力
 資料：data/ext/opt_txo_daily_agg.csv（FinMind TaiwanOptionDaily 全履約價彙總，fetch_local.py --optdaily）。"""
+SRC = "taifex" if "--taifex" in sys.argv else "finmind"  # 須在 import risk_model 前讀（它會清掉 argv）
 import numpy as np, pandas as pd, model as M, risk_model as RM, futures_eval as FE
 from sklearn.metrics import roc_auc_score
 df = M.load(); X, yv, ydd, ew, lr = RM.build(df)
 X["opt_fgn_bias"] = FE.fut_features(df, FE.load_futures(df.index))["opt_fgn_bias"]
-o = pd.read_csv("data/ext/opt_txo_daily_agg.csv", parse_dates=["date"]).set_index("date").reindex(df.index)
+if SRC == "taifex":  # 期交所官方 P/C Ratio（fetch_taifex_pc.py）
+    t = pd.read_csv("data/ext/taifex_pcratio.csv", parse_dates=["date"]).set_index("date").reindex(df.index)
+    o = pd.DataFrame({"oi_P": t.put_oi, "oi_C": t.call_oi, "vol_P": t.put_vol, "vol_C": t.call_vol})
+else:
+    o = pd.read_csv("data/ext/opt_txo_daily_agg.csv", parse_dates=["date"]).set_index("date").reindex(df.index)
 P = pd.DataFrame(index=df.index)
 P["pc_oi"] = np.log(o.oi_P / o.oi_C); P["pc_vol"] = np.log(o.vol_P / o.vol_C); P["pc_vol5"] = P.pc_vol.rolling(5).mean()
 P["pc_oi_z60"] = (P.pc_oi - P.pc_oi.rolling(60).mean()) / P.pc_oi.rolling(60).std()
@@ -51,4 +56,4 @@ G = pd.DataFrame({"q": q, "大跌": ydd.reindex(A.index), "大漲": y_up.reindex
 print(G.groupby("q", observed=True).agg(["mean", "size"]).round(3).iloc[:, [0, 1, 2, 4]])
 print("P/C 未平倉比(原始倍數) 分位：", np.exp(A.pc_oi.shift(-1)).describe().round(2).to_dict())
 os.makedirs("reports", exist_ok=True)
-T.to_csv("reports/pc_eval2_auc.csv", index=False, encoding="utf-8-sig"); S.to_csv("reports/pc_eval2_strategy.csv", index=False, encoding="utf-8-sig")
+T.to_csv(f"reports/pc_eval2_{SRC}_auc.csv", index=False, encoding="utf-8-sig"); S.to_csv(f"reports/pc_eval2_{SRC}_strategy.csv", index=False, encoding="utf-8-sig")
