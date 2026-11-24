@@ -1,0 +1,57 @@
+{
+  "rows": 2652,
+  "dates": [
+    "2016-01-04 00:00:00",
+    "2026-11-23 00:00:00"
+  ],
+  "errors": [
+    "2018-07-01: ImportError('`Import html5lib` failed.  Use pip, conda, or your preferred package management tool to install the html5lib package.')"
+  ],
+  "tail": [
+    {
+      "date": "2026-11-17",
+      "put_vol": "218602",
+      "call_vol": "276899",
+      "pc_vol_pct": "78.95",
+      "put_oi": "104833",
+      "call_oi": "193859",
+      "pc_oi_pct": "54.08"
+    },
+    {
+      "date": "2026-11-18",
+      "put_vol": "428932",
+      "call_vol": "466402",
+      "pc_vol_pct": "91.97",
+      "put_oi": "35515",
+      "call_oi": "89241",
+      "pc_oi_pct": "39.8"
+    },
+    {
+      "date": "2026-11-19",
+      "put_vol": "173524",
+      "call_vol": "236469",
+      "pc_vol_pct": "73.38",
+      "put_oi": "56147",
+      "call_oi": "136941",
+      "pc_oi_pct": "41.0"
+    },
+    {
+      "date": "2026-11-20",
+      "put_vol": "348206",
+      "call_vol": "440990",
+      "pc_vol_pct": "78.96",
+      "put_oi": "28549",
+      "call_oi": "95013",
+      "pc_oi_pct": "30.05"
+    },
+    {
+      "date": "2026-11-23",
+      "put_vol": "87845",
+      "call_vol": "162043",
+      "pc_vol_pct": "54.21",
+      "put_oi": "43378",
+      "call_oi": "140388",
+      "pc_oi_pct": "30.9"
+    }
+  ]
+}
