@@ -1,6 +1,6 @@
 """
 Alvin-J 原創｜CC BY-NC 4.0（非商業使用，須標示出處）
-週報圖：reports/risk_weekly.png
+週報圖：reports/risk_weekly.png（指數圖另畫 200 日線，只當趨勢參考）
 讀 reports/risk_history.csv（近 120 日樣本外 walk-forward 值）＋ risk_today.json（最新一天，全樣本重訓值）
 四格同一 x 軸：加權指數（警訊期間加底色）、大跌機率（25% 警戒線、基準率）、預測波動、建議持股；標題列出下週 5 日區間。
 用法：python weekly_chart.py [--days 90]
@@ -42,7 +42,10 @@ def report_blocks(t, hall, r68, r95, thr):
     pct, cut, tgt = t["vol_percentile_since_2016"], t["params"]["cut"], t["params"]["target"]
     d = pd.Timestamp(t["date"]); lw = t.get("last_warning_day")
     hi = "極高" if pct >= .9 else "偏高" if pct >= .7 else "正常" if pct >= .3 else "偏低"
-    if t["warning_active"]:
+    wk = hall.warning.astype(str).str.lower().isin(["true", "1", "1.0"]).iloc[-6:-1]  # 本週前幾個交易日
+    if t.get("rebuy_alert") or (not t["warning_active"] and wk.any()):  # 本週剛結束減碼期
+        core = f"風險解除，持股可加回到 {w:.0%}。這只代表減碼期結束，不是看漲訊號。"
+    elif t["warning_active"]:
         k = t.get("warning_trading_days_left", 0)
         core = f"大跌警訊中，維持減碼，建議持股 {w:.0%}；若之後不再超過 {thr:.0%}，最快 {k} 個交易日後解除。"
     else:
@@ -70,6 +73,9 @@ def report_blocks(t, hall, r68, r95, thr):
         if vix >= 25: risk.append(f"VIX {vix:.0f} 處高檔，模型此時傾向預期反彈，這點宜保守看待")
     except Exception:
         pass
+    tr = t.get("trend_ma200")
+    trend = (f"・趨勢參考：指數{'站上' if tr['above'] else '跌破'} 200 日線（{tr['ma200']:,} 點），"
+             f"在線{'上' if tr['above'] else '下'} {abs(tr['dist_pct']):.1%}。僅供參考，不作買賣依據。") if tr else None
     riskt = ("，".join(risk) + "。" if risk else "") + "模型只預測風險，不預測漲跌方向。"
     watch = (f"每個交易日收盤後的模型讀數。大跌機率如果回到 {thr:.0%} 以上，就要減碼到{'一半' if cut == .5 else f'{cut:.0%}'}。"
              if not t["warning_active"] else
@@ -85,6 +91,7 @@ def report_blocks(t, hall, r68, r95, thr):
          + (f"，再乘上減碼 {cut:g}" if t["warning_active"] else "") + f"，也就是 {w:.0%}。", B, INK, "normal", G),
         (f"・下週區間：68% 機率落在 {r68[0]:,} 到 {r68[1]:,} 點，95% 機率落在 {r95[0]:,} 到 {r95[1]:,} 點。", B, INK, "normal", G),
         ("・" + opt, B, INK, "normal", G),
+    ] + ([(trend, B, INK2, "normal", G)] if trend else []) + [
         ("・風險提醒：" + riskt, B, INK, "normal", G),
         ("觀察重點：" + watch, B, INK, "bold", .2),
     ]
@@ -95,6 +102,7 @@ def main():
     d = pd.Timestamp(t["date"])
     h.loc[d, ["close", "p_drawdown", "pred_vol", "warning", "suggest_equity"]] = [
         t["close"], t["p_drawdown_7pct_within_20d"], t["pred_vol_20d_ann"], t["warning_active"], t["suggest_equity"]]
+    if t.get("trend_ma200") and "ma200" in h: h.loc[d, "ma200"] = t["trend_ma200"]["ma200"]
     h = h.sort_index(); hall = h.copy(); h = h.tail(DAYS); h["warning"] = h.warning.astype(str).str.lower().isin(["true", "1", "1.0"])
     c, v = t["close"], t["pred_vol_20d_ann"]; s5 = v * np.sqrt(5 / 252)
     r68 = [round(c * np.exp(-s5)), round(c * np.exp(s5))]; r95 = [round(c * np.exp(-1.96 * s5)), round(c * np.exp(1.96 * s5))]
@@ -139,6 +147,9 @@ def main():
             else: i += 1
 
     ax[0].plot(h.index, h.close, color=BLUE, lw=2)
+    if "ma200" in h and h.ma200.notna().any():
+        ax[0].plot(h.index, h.ma200, color=INK2, lw=1.4, ls="--")
+        ax[0].annotate("200 日線（參考）", (h.index[0], h.ma200.dropna().iloc[0]), xytext=(2, 10), textcoords="offset points", fontsize=12, color=INK2)
     ax[0].scatter([d], [c], color=BLUE, s=40, zorder=3, edgecolor=SURF, linewidth=2)
     ax[0].annotate(f"{c:,.0f}", (d, c), xytext=(6, -4), textcoords="offset points", color=INK, fontsize=15, fontweight="bold")
     nxt = pd.bdate_range(d + pd.Timedelta(days=1), periods=5)[-1]

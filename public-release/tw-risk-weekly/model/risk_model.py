@@ -164,6 +164,8 @@ def main():
     hz = pd.DataFrame({"close": df.close.reindex(test), "p_drawdown": p_dd, "pred_vol": vol_fc,
                        "warning": warn_active(p_dd.values, best.thr, int(best.hold)), "suggest_equity": wv3}).tail(120)
     if "opt_fgn_bias" in X: hz["opt_fgn_bias"] = X.opt_fgn_bias.reindex(hz.index)
+    ma200 = df.close.rolling(200).mean()  # 趨勢參考（週報顯示用，不進模型、不影響持股）
+    hz["ma200"] = ma200.reindex(hz.index)
     hz.round(4).rename_axis("date").to_csv(os.path.join(R, PFX + "history.csv"), encoding="utf-8-sig")
     rows = []
     for n, w in cands.items():
@@ -200,7 +202,15 @@ def main():
     alerts = []
     if pd_today > best.thr: alerts.append(f"大跌機率 {pd_today:.0%} 超過 {best.thr:.0%}")
     if warn and not prev_warn: alerts.append(f"觸發減碼：持股降到 {w_today:.0%}")
-    if prev_warn and not warn: alerts.append(f"警訊持有期滿：可回到正常部位 {w_today:.0%}")
+    # 回補提醒：警訊結束（連續 hold 個交易日大跌機率都沒超過門檻）當天通知一次，持股回到 目標波動÷預測波動
+    today["rebuy_alert"] = bool(prev_warn and not warn)
+    if today["rebuy_alert"]:
+        alerts.append(f"回補提醒：風險解除，連續 {int(best.hold)} 個交易日大跌機率未超過 {best.thr:.0%}，"
+                      f"持股可加回到 {w_today:.0%}（{best.target:.0%}÷預測波動 {v_today:.0%}）。這不是看漲訊號，只代表減碼期結束")
+    m200 = float(ma200.iloc[-1])
+    if np.isfinite(m200):
+        today["trend_ma200"] = {"ma200": round(m200), "dist_pct": round(c / m200 - 1, 4), "above": bool(c > m200),
+                                "note": "僅供參考，不作買賣依據"}
     # 資料新鮮度：各輸入最後一筆日期，落後台股最新交易日超過 3 個交易日就警告（避免像 VIX 停在 9/22 卻沒人發現）
     ext = os.path.join(M.D, "ext"); fresh = {}
     for k, fn, col in (("vix", "vix.csv", "DATE"), ("usdtwd", "usdtwd.csv", "Date"), ("sox", "sox.csv", "date"),
