@@ -34,12 +34,14 @@ def ql_ci(y, a, b, block=20, n=1000, seed=0):  # 新版減舊版的平均 QLIKE�
 def ens_pred(X, y, cols): return (RM.wf(X[cols], y, RM.logit) + RM.wf(X[cols], y, RM.xgb)) / 2
 
 tv = pd.read_csv(os.path.join(EXT, "twvix_daily.csv"), parse_dates=["date"]).set_index("date").sort_index()
-tv = tv[tv.close.notna()]  # close＝依期交所公式用 TXO 收盤買賣價重建（官網只給近 4 個月官方值，見 fetch_twvix.py）
+tv["close"] = tv.close_set; tv = tv[tv.close.notna()]
+# close_set＝依期交所公式用 TXO 結算價重建（官網只給近 4 個月官方值；與官方 79 天比對 MAE 0.37 點、98.7% 誤差 <1 點，
+# 唯一大差異 2026-11-24 官方 26.18 疑為官方異常值，前後兩日官方 55.4/58.4）
 df = M.load(); X0, y_vol0, y_dd0, ew, lr = RM.build(df)
 X0["opt_fgn_bias"] = FE.fut_features(df, FE.load_futures(df.index))["opt_fgn_bias"]
 live = list(X0.columns)
 t = tv.reindex(df.index)
-miss = t.close.isna().mean(); t = t.ffill(limit=3)
+miss = t.close[t.index >= tv.index.min()].isna().mean(); t = t.ffill(limit=3)
 T = pd.DataFrame(index=df.index)
 T["twvix"] = np.log(t.close)                               # 水準
 T["twvix_vrp"] = np.log(t.close / 100) - X0.rv22           # 隱含 − 已實現（對數比）：選擇權買方願付的保險溢價
@@ -111,7 +113,8 @@ yr.to_csv(os.path.join(RM.R, "twvix_yearly.csv"), index=False, encoding="utf-8-s
 r = (df.close.shift(-1) / df.close - 1).reindex(common); cm = common[r.notna().values]; r = r[cm]
 volA, volB = np.exp(vf["A HAR+幅度+美VIX（LIVE）"]), np.exp(vf["B +台VIX"])
 strats = {"A v3.2": (P["A v3.2"], volA), "+台VIX全部（只改大跌）": (P["+台VIX全部"], volA),
-          "+台VIX水準（只改大跌）": (P["+台VIX水準"], volA), "+台VIX（大跌＋波動都改）": (P["+台VIX全部"], volB),
+          "+台VIX水準（只改大跌）": (P["+台VIX水準"], volA), "+台VIX（只改波動預測）": (P["A v3.2"], volB),
+          "台VIX取代美VIX（只改波動預測）": (P["A v3.2"], np.exp(vf["C 台VIX取代美VIX"])), "+台VIX（大跌＋波動都改）": (P["+台VIX全部"], volB),
           "台VIX取代美VIX": (P["台VIX取代美VIX"], np.exp(vf["C 台VIX取代美VIX"]))}
 rows = []; P3 = (("保留期前", cm < RM.SPLIT), ("2023–2026 保留期", cm >= RM.SPLIT), ("全期", np.ones(len(cm), bool)))
 for k, (p, v) in strats.items():
@@ -119,6 +122,17 @@ for k, (p, v) in strats.items():
     warn = RM.warn_active(p.reindex(cm).values, 0.25, 10)
     for per, m in P3: rows.append({"模型": k, "期間": per, **M.stats(s[m]), "警訊日比例": warn[m].mean(), "平均持股": w[m].mean()})
 for per, m in P3: rows.append({"模型": "買進持有", "期間": per, **M.stats(r[m])})
+def sharpe(x): return x.mean() / x.std() * np.sqrt(252)
+sA = RM.strat(RM.weights(volA.reindex(cm), P["A v3.2"].reindex(cm).values, 0.22, 0.5, 0.25, 0.2, 10), r)
+for k, (p, v) in strats.items():  # 與 A 的 Sharpe 差，區塊 bootstrap（20 日）
+    if k == "A v3.2": continue
+    sk = RM.strat(RM.weights(v.reindex(cm), p.reindex(cm).values, 0.22, 0.5, 0.25, 0.2, 10), r)
+    for per, m in P3:
+        a_, b_ = sk[m].values, sA[m].values; rng = np.random.default_rng(0); bs = []
+        for _ in range(1000):
+            ix = boot_idx(len(a_), 20, rng); bs.append(sharpe(pd.Series(a_[ix])) - sharpe(pd.Series(b_[ix])))
+        lo, hi = np.percentile(bs, [2.5, 97.5])
+        rows.append({"模型": k, "期間": per + "｜Sharpe差vsA", "Sharpe差": sharpe(sk[m]) - sharpe(sA[m]), "差_95%下界": lo, "差_95%上界": hi})
 st = pd.DataFrame(rows); print(st.round(3).to_string(index=False))
 st.to_csv(os.path.join(RM.R, "twvix_strategy.csv"), index=False, encoding="utf-8-sig")
 print("最新台指 VIX：", T.dropna().iloc[-1].round(3).to_dict(), "日期", T.dropna().index[-1].date())
