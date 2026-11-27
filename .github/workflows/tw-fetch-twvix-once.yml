@@ -1,0 +1,27 @@
+name: tw-fetch-twvix-once
+# 一次性：抓期交所台指 VIX 官方歷史資料（雲端被擋），結果 commit 回本研究分支；跑完即刪除此 workflow。
+on:
+  push:
+    branches: [claude/project-thread-nx9phi]
+    paths: [.github/workflows/tw-fetch-twvix-once.yml]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install requests pandas
+      - run: python tw-model/fetch_twvix.py
+      - name: commit
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tw-model/data/ext/twvix_* tw-model/data/ext/fetch_twvix_log.json || true
+          git commit -m "Fetch TAIFEX TAIWAN VIX history" || echo "nothing to commit"
+          git push origin HEAD:claude/project-thread-nx9phi
