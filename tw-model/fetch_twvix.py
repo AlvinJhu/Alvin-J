@@ -1,85 +1,137 @@
 """
-一次性抓取：期交所「臺指選擇權波動率指數」（TAIWAN VIX）官方歷史分鐘資料 → 日資料
-來源：https://www.taifex.com.tw/cht/7/vixMinNew（每月一個 txt；雲端被擋，由一次性 GitHub Actions 執行）
-輸出：data/ext/twvix_daily.csv（date, open, high, low, close, n_obs；close = 日盤 13:45 前最後一筆）
-      data/ext/twvix_raw.tar.gz（原始檔，供查核）、data/ext/fetch_twvix_log.json
+一次性抓取（GitHub Actions；雲端被期交所擋）：台指選擇權波動率指數（TAIWAN VIX）
+期交所官網只提供近 3–4 個月的官方 VIX，所以 2016 起改用期交所 TXO 每日行情（收盤最後最佳買賣價）
+依期交所公告的 CBOE VIX 編製法自行重建（近月＋次近月月選、價外序列買賣中價、30 天插補），
+再用近幾個月官方值驗證重建誤差。
+輸出：data/ext/twvix_daily.csv（date, close=重建值, official=官方收盤值(有的話), sig_near, sig_next, T_near, T_next, F_near）
+      data/ext/fetch_twvix_log.json
+用法：python fetch_twvix.py [--start 2016-01] [--end 2026-11]
 """
-import os, re, io, json, time, tarfile, datetime as dt
-import requests, pandas as pd
+import os, sys, io, re, json, time, datetime as dt
+import numpy as np, pandas as pd, requests
 
 HERE = os.path.dirname(os.path.abspath(__file__)); EXT = os.path.join(HERE, "data", "ext")
-BASE = "https://www.taifex.com.tw"
-PAGES = ["/cht/7/vixMinNew", "/cht/7/vixMin", "/cht/7/vixDaily"]
-UA = {"User-Agent": "Mozilla/5.0 (research data download)"}
-S = requests.Session(); S.headers.update(UA)
+BASE = "https://www.taifex.com.tw"; R = 0.01  # 無風險利率（台灣短率約 1–1.7%，對 VIX 影響 <0.1 點）
+S = requests.Session(); S.headers.update({"User-Agent": "Mozilla/5.0 (research data download)"})
 
-def get(url, tries=4):
-    for k in range(tries):
+def req(method, url, **kw):
+    for k in range(5):
         try:
-            r = S.get(url, timeout=60)
+            r = S.request(method, url, timeout=180, **kw)
             if r.status_code == 200: return r
-            if r.status_code == 404: return r
-        except requests.RequestException as e:
-            print("retry", url, e)
-        time.sleep(2 * (k + 1))
+            print("HTTP", r.status_code, url)
+        except requests.RequestException as e: print("retry", url, e)
+        time.sleep(5 * (k + 1))
     return None
 
-log = {"pages": {}, "files": {}}
-links = set()
-for p in PAGES:
-    r = get(BASE + p); log["pages"][p] = getattr(r, "status_code", None)
-    if r is None or r.status_code != 200: continue
-    for h in re.findall(r'''(?:href|src)\s*=\s*["']([^"']+)["']''', r.text):
-        if re.search(r"\.(txt|zip|csv)(\?|$)", h, re.I) and re.search(r"vix", h, re.I):
-            links.add(h if h.startswith("http") else BASE + ("" if h.startswith("/") else "/") + h)
-log["links_from_pages"] = sorted(links)
-# 已知命名規則補洞：2016-01 起每月
-m = dt.date(2016, 1, 1); today = dt.date.today()
-while m <= today:
-    links.add(f"{BASE}/file/taifex/Dailydownload/vix/log2data/{m:%Y%m}new.txt"); m = (m.replace(day=28) + dt.timedelta(days=4)).replace(day=1)
+def official():
+    """近 4 個月官方每日收盤 VIX（log2data/YYYYMMnew.txt：日期、時間、指數、收盤前 1 分鐘平均）"""
+    r = req("GET", BASE + "/cht/7/vixDaily3MNew"); rows = []
+    links = re.findall(r"window\.open\('([^']+new\.txt)'", r.text) if r else []
+    for u in links:
+        t = req("GET", u if u.startswith("http") else BASE + u)
+        if t is None: continue
+        for line in t.content.decode("cp950", errors="ignore").splitlines():
+            m = re.match(r"\s*(\d{8})\s+(\d+)\s+([\d.]+)", line)
+            if m: rows.append((pd.Timestamp(m.group(1)), float(m.group(3))))
+    return pd.Series(dict(rows), name="official").sort_index(), links
 
-raw = {}
-for u in sorted(links):
-    r = get(u); log["files"][u] = getattr(r, "status_code", None)
-    if r is not None and r.status_code == 200 and len(r.content) > 200: raw[u] = r.content
-    time.sleep(0.5)
+def third_wed(ym):
+    y, m = int(ym[:4]), int(ym[4:6]); d = dt.date(y, m, 1)
+    return d + dt.timedelta(days=(2 - d.weekday()) % 7 + 14)
 
-def texts(name, b):
-    if name.lower().endswith(".zip") or b[:2] == b"PK":
-        import zipfile
-        with zipfile.ZipFile(io.BytesIO(b)) as z:
-            for n in z.namelist(): yield from texts(n, z.read(n))
-        return
-    for enc in ("utf-8", "cp950", "big5"):
-        try: yield b.decode(enc); return
-        except UnicodeDecodeError: pass
-    yield b.decode("cp950", errors="ignore")
+def num(s): return pd.to_numeric(s.astype(str).str.strip().replace({"-": np.nan, "": np.nan}), errors="coerce")
 
-pat = re.compile(r"(\d{4}/?\d{2}/?\d{2})[\s,]+(\d{1,2}:?\d{2}:?\d{2}\d*)[\s,]+([\d.]+)")
-rows = []
-for u, b in raw.items():
-    for t in texts(u, b):
-        for line in t.splitlines():
-            mm = pat.search(line)
-            if not mm: continue
-            d = mm.group(1).replace("/", ""); tm = re.sub(r"\D", "", mm.group(2))[:6].ljust(6, "0")
-            rows.append((d, tm, float(mm.group(3))))
-log["n_rows_parsed"] = len(rows)
-if raw:
-    with tarfile.open(os.path.join(EXT, "twvix_raw.tar.gz"), "w:gz") as tf:
-        for u, b in raw.items():
-            ti = tarfile.TarInfo(u.rsplit("/", 1)[-1]); ti.size = len(b); tf.addfile(ti, io.BytesIO(b))
-    log["sample"] = {u.rsplit("/", 1)[-1]: next(texts(u, b))[:600] for u, b in list(raw.items())[:3]}
-if rows:
-    d = pd.DataFrame(rows, columns=["date", "time", "v"]).drop_duplicates()
-    d = d[(d.v > 1) & (d.v < 200)]
-    d["date"] = pd.to_datetime(d.date, format="%Y%m%d", errors="coerce"); d = d.dropna().sort_values(["date", "time"])
-    day = d[(d.time >= "084500") & (d.time <= "134500")]
-    g = day.groupby("date").v
-    out = pd.DataFrame({"open": g.first(), "high": g.max(), "low": g.min(), "close": g.last(), "n_obs": g.size()})
-    out.round(4).to_csv(os.path.join(EXT, "twvix_daily.csv"), encoding="utf-8")
-    log["dates"] = [str(out.index.min().date()), str(out.index.max().date())]; log["days"] = len(out)
-    log["tail"] = out.tail(5).reset_index().astype(str).to_dict("records")
-json.dump(log, open(os.path.join(EXT, "fetch_twvix_log.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
-print(json.dumps({k: v for k, v in log.items() if k != "files"}, ensure_ascii=False)[:3000])
-print("files ok:", sum(1 for v in log["files"].values() if v == 200), "/", len(log["files"]))
+def month_df(y, m):
+    a = dt.date(y, m, 1); b = (a.replace(day=28) + dt.timedelta(days=4)).replace(day=1) - dt.timedelta(days=1)
+    b = min(b, dt.date.today())
+    r = req("POST", BASE + "/cht/3/optDataDown", data={"down_type": "1", "commodity_id": "TXO", "commodity_id2": "",
+                                                       "queryStartDate": a.strftime("%Y/%m/%d"), "queryEndDate": b.strftime("%Y/%m/%d")})
+    if r is None or len(r.content) < 500: return None
+    d = pd.read_csv(io.StringIO(r.content.decode("cp950", errors="ignore")), dtype=str, index_col=False)
+    d.columns = [c.strip() for c in d.columns]
+    d = d[(d["交易時段"].str.strip() == "一般") & (d["契約"].str.strip() == "TXO")]
+    d["ym"] = d["到期月份(週別)"].str.strip(); d = d[d.ym.str.fullmatch(r"\d{6}")]  # 只用月選（TAIWAN VIX 不含週選）
+    out = pd.DataFrame({"date": pd.to_datetime(d["交易日期"].str.strip()), "ym": d.ym, "K": num(d["履約價"]),
+                        "cp": np.where(d["買賣權"].str.contains("買"), "C", "P"),
+                        "bid": num(d["最後最佳買價"]), "ask": num(d["最後最佳賣價"]), "settle": num(d["結算價"])})
+    out["exp"] = pd.to_datetime(d["契約到期日"].str.strip(), format="%Y%m%d", errors="coerce") if "契約到期日" in d else pd.NaT
+    miss = out.exp.isna(); out.loc[miss, "exp"] = pd.to_datetime(out.loc[miss, "ym"].map(third_wed))
+    return out
+
+def sigma2(g, T):
+    """CBOE VIX 單一到期 σ²；g：同一到期日的買賣權報價"""
+    c = g[g.cp == "C"].set_index("K"); p = g[g.cp == "P"].set_index("K")
+    Ks = c.index.intersection(p.index).sort_values()
+    if len(Ks) < 5: return np.nan, np.nan
+    def mid(x, k):
+        b, a = x.at[k, "bid"], x.at[k, "ask"]
+        return (b + a) / 2 if (b > 0 and a > 0 and a >= b) else np.nan
+    cm = pd.Series({k: mid(c, k) for k in Ks}); pm = pd.Series({k: mid(p, k) for k in Ks})
+    both = (cm - pm).dropna()
+    if both.empty: return np.nan, np.nan
+    Kst = (both.abs()).idxmin(); F = Kst + np.exp(R * T) * both[Kst]
+    K0 = Ks[Ks <= F].max() if (Ks <= F).any() else Ks.min()
+    Q = {}
+    for side, x, order in (("P", p, [k for k in Ks[::-1] if k < K0]), ("C", c, [k for k in Ks if k > K0])):
+        zero = 0
+        for k in order:
+            b = x.at[k, "bid"] if k in x.index else np.nan
+            if not (b > 0): zero += 1
+            else:
+                zero = 0; m = mid(x, k)
+                if np.isfinite(m): Q[k] = m
+            if zero >= 2: break
+    q0 = np.nanmean([cm.get(K0, np.nan), pm.get(K0, np.nan)])
+    if np.isfinite(q0): Q[K0] = q0
+    ks = np.array(sorted(Q)); qs = np.array([Q[k] for k in ks])
+    if len(ks) < 5: return np.nan, F
+    dK = np.gradient(ks) if len(ks) > 1 else np.array([0.0])
+    dK[0] = ks[1] - ks[0]; dK[-1] = ks[-1] - ks[-2]
+    s2 = 2 / T * np.sum(dK / ks ** 2 * np.exp(R * T) * qs) - 1 / T * (F / K0 - 1) ** 2
+    return s2, F
+
+def day_vix(g, day, tdays):
+    exps = sorted(g.exp.unique()); res = {}
+    # 換月：近月剩 ≤2 個交易日（含當天之後）就改用次近月與第 2 個次近月
+    def tleft(e): return int(((tdays > day) & (tdays <= e)).sum()) if e <= tdays.max() else int(np.busday_count(day.date(), pd.Timestamp(e).date()))
+    exps = [e for e in exps if pd.Timestamp(e) > day and tleft(e) > 2][:2]
+    if len(exps) < 2: return None
+    out = {}
+    for tag, e in zip(("near", "next"), exps):
+        mins = (pd.Timestamp(e) - day).days * 1440 + (13 * 60 + 30) - (13 * 60 + 45)
+        T = mins / 525600; s2, F = sigma2(g[g.exp == e], T)
+        out[f"T_{tag}"] = T; out[f"sig_{tag}"] = s2; out[f"F_{tag}"] = F
+    T1, T2, s1, s2 = out["T_near"], out["T_next"], out["sig_near"], out["sig_next"]
+    if not (np.isfinite(s1) and np.isfinite(s2)) or s1 <= 0 or s2 <= 0: return {**out, "close": np.nan}
+    N1, N2, N30, N365 = T1 * 525600, T2 * 525600, 30 * 1440, 365 * 1440
+    v = (T1 * s1 * (N2 - N30) / (N2 - N1) + T2 * s2 * (N30 - N1) / (N2 - N1)) * N365 / N30
+    return {**out, "close": 100 * np.sqrt(v) if v > 0 else np.nan}
+
+if __name__ == "__main__":
+    a = sys.argv; st = a[a.index("--start") + 1] if "--start" in a else "2016-01"; en = a[a.index("--end") + 1] if "--end" in a else dt.date.today().strftime("%Y-%m")
+    log = {"start": st, "end": en, "months": {}}
+    off, links = official(); log["official_links"] = links; log["official_days"] = len(off)
+    rows = []; months = pd.period_range(st, en, freq="M")
+    for pm in months:
+        t0 = time.time(); d = month_df(pm.year, pm.month)
+        if d is None: log["months"][str(pm)] = "fail"; print(pm, "fail"); continue
+        tdays = pd.DatetimeIndex(sorted(d.date.unique()))
+        for day, g in d.groupby("date"):
+            r = day_vix(g, day, pd.DatetimeIndex(sorted(set(tdays) | set(pd.bdate_range(day, day + pd.Timedelta(days=70))))))
+            if r: rows.append({"date": day, **r})
+        log["months"][str(pm)] = f"{len(tdays)} days, {len(d)} rows, {time.time()-t0:.0f}s"; print(pm, log["months"][str(pm)], flush=True)
+        time.sleep(1)
+    out = pd.DataFrame(rows).set_index("date").sort_index()
+    out = out.join(off, how="outer")
+    out.round(6).to_csv(os.path.join(EXT, "twvix_daily.csv"), encoding="utf-8")
+    both = out[["close", "official"]].dropna()
+    if len(both):
+        e = both.close - both.official
+        log["validation"] = {"days": len(both), "corr": round(float(both.corr().iloc[0, 1]), 4), "mean_err": round(float(e.mean()), 3),
+                             "mae": round(float(e.abs().mean()), 3), "max_abs_err": round(float(e.abs().max()), 3),
+                             "corr_chg": round(float(both.diff().corr().iloc[0, 1]), 4)}
+    log["replica_days"] = int(out.close.notna().sum()); log["replica_range"] = [str(out.close.dropna().index.min().date()), str(out.close.dropna().index.max().date())] if log["replica_days"] else None
+    log["tail"] = out.tail(8).round(3).reset_index().astype(str).to_dict("records")
+    json.dump(log, open(os.path.join(EXT, "fetch_twvix_log.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    print(json.dumps({k: v for k, v in log.items() if k != "months"}, ensure_ascii=False))

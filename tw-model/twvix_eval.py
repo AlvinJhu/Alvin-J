@@ -5,7 +5,7 @@
   2) 大跌機率：v3.2 因子加上台指 VIX 特徵，walk-forward 樣本外 AUC 與配對差異 CI；另測「台指 VIX 取代美 VIX」
   3) 策略：v3.2 參數（目標 22%、減碼 1/2、門檻 25%、持有 10 日）Sharpe/MDD
 時點：台指 VIX 日盤收在 13:45，晚於現貨 13:30 收盤，但仍在當日收盤後、預測 d+1..d+20 之前已知。
-資料：data/ext/twvix_daily.csv（fetch_twvix.py，一次性 GitHub Actions 抓期交所官方分鐘資料）
+資料：data/ext/twvix_daily.csv（fetch_twvix.py：期交所 TXO 每日行情重建，並以官方近 4 個月值驗證）
 輸出：reports/twvix_vol.csv、twvix_single.csv、twvix_auc.csv、twvix_yearly.csv、twvix_strategy.csv
 """
 import os, sys; HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
@@ -34,6 +34,7 @@ def ql_ci(y, a, b, block=20, n=1000, seed=0):  # 新版減舊版的平均 QLIKE�
 def ens_pred(X, y, cols): return (RM.wf(X[cols], y, RM.logit) + RM.wf(X[cols], y, RM.xgb)) / 2
 
 tv = pd.read_csv(os.path.join(EXT, "twvix_daily.csv"), parse_dates=["date"]).set_index("date").sort_index()
+tv = tv[tv.close.notna()]  # close＝依期交所公式用 TXO 收盤買賣價重建（官網只給近 4 個月官方值，見 fetch_twvix.py）
 df = M.load(); X0, y_vol0, y_dd0, ew, lr = RM.build(df)
 X0["opt_fgn_bias"] = FE.fut_features(df, FE.load_futures(df.index))["opt_fgn_bias"]
 live = list(X0.columns)
@@ -45,7 +46,6 @@ T["twvix_vrp"] = np.log(t.close / 100) - X0.rv22           # 隱含 − 已實�
 T["twvix_chg5"] = T.twvix.diff(5)                          # 5 日變化（恐慌升溫）
 T["twvix_z60"] = (T.twvix - T.twvix.rolling(60).mean()) / T.twvix.rolling(60).std()
 T["twvix_us"] = T.twvix - X0.vix                           # 台 VIX 相對美 VIX（台股特有風險）
-T["twvix_rng"] = np.log(t.high / t.low).rolling(5).mean()  # 日內台 VIX 振幅
 newc = list(T.columns)
 U = pd.DataFrame(index=df.index)  # 對照組：同樣做法套在美國 VIX，檢查增量是否為台股特有
 U["usvix_vrp"] = X0.vix - np.log(100) - X0.rv22; U["usvix_chg5"] = X0.vix.diff(5)
