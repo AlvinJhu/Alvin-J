@@ -1,0 +1,21 @@
+{
+  "date": "2026-11-20",
+  "breadth_200d_top100": 0.341,
+  "breadth_60d_low": 0.341,
+  "breadth_10m_all_market": 0.369,
+  "margin_20d_chg": -0.2409,
+  "dd60": -0.2768,
+  "fgn_5d_net_over_turnover": -0.0369,
+  "fut_fgn_chg5_over_oi": 0.0028,
+  "ep": 0.0423,
+  "ep_pct_since2015": 0.056,
+  "dy": 0.0168,
+  "dy_pct_since2015": 0.035,
+  "signals": {
+    "寬度回升": false,
+    "融資減肥": true,
+    "外資回補": false,
+    "估值便宜": false,
+    "任一訊號": true
+  }
+}
