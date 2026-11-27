@@ -1,5 +1,5 @@
 name: tw-fetch-twvix-once
-# 一次性（使用者 2026-11-27 同意）：抓期交所 TXO 每日行情重建台指 VIX 2016 起（官網官方 VIX 只給近 4 個月），結果 commit 回本研究分支；跑完即刪除。
+# 一次性（使用者 2026-11-27 同意）：抓期交所 TXO 每日行情重建台指 VIX 2016 起（官網官方 VIX 只給近 4 個月；第 3 次：缺買賣價改用結算價），結果 commit 回本研究分支；跑完即刪除。
 on:
   push:
     branches: [claude/project-thread-nx9phi]
@@ -22,6 +22,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm -q --cached tw-model/data/ext/twvix_raw.tar.gz 2>/dev/null || true; rm -f tw-model/data/ext/twvix_raw.tar.gz; git add -A tw-model/data/ext/twvix_daily.csv tw-model/data/ext/fetch_twvix_log.json
+          git rm -q --cached tw-model/data/ext/twvix_raw.tar.gz 2>/dev/null || true; rm -f tw-model/data/ext/twvix_raw.tar.gz; git add -A tw-model/data/ext/twvix_daily.csv tw-model/data/ext/twvix_txo_quotes_recent.csv.gz tw-model/data/ext/fetch_twvix_log.json
           git commit -m "Fetch TAIFEX TAIWAN VIX history" || echo "nothing to commit"
           git push origin HEAD:claude/project-thread-nx9phi

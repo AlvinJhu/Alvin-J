@@ -8,7 +8,7 @@
 用法：python fetch_twvix.py [--start 2016-01] [--end 2026-11]
 """
 import os, sys, io, re, json, time, datetime as dt
-import numpy as np, pandas as pd, requests
+import numpy as np, pandas as pd, requests, warnings; warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 HERE = os.path.dirname(os.path.abspath(__file__)); EXT = os.path.join(HERE, "data", "ext")
 BASE = "https://www.taifex.com.tw"; R = 0.01  # 無風險利率（台灣短率約 1–1.7%，對 VIX 影響 <0.1 點）
@@ -59,72 +59,84 @@ def month_df(y, m):
     miss = out.exp.isna(); out.loc[miss, "exp"] = pd.to_datetime(out.loc[miss, "ym"].map(third_wed))
     return out
 
-def sigma2(g, T):
-    """CBOE VIX 單一到期 σ²；g：同一到期日的買賣權報價"""
-    c = g[g.cp == "C"].set_index("K"); p = g[g.cp == "P"].set_index("K")
-    Ks = c.index.intersection(p.index).sort_values()
-    if len(Ks) < 5: return np.nan, np.nan
-    def mid(x, k):
-        b, a = x.at[k, "bid"], x.at[k, "ask"]
-        return (b + a) / 2 if (b > 0 and a > 0 and a >= b) else np.nan
-    cm = pd.Series({k: mid(c, k) for k in Ks}); pm = pd.Series({k: mid(p, k) for k in Ks})
-    both = (cm - pm).dropna()
-    if both.empty: return np.nan, np.nan
-    Kst = (both.abs()).idxmin(); F = Kst + np.exp(R * T) * both[Kst]
+def quotes(x, mode):
+    """mode: mid＝收盤最後最佳買賣中價；set＝結算價；hyb＝有買賣價用中價、否則用結算價"""
+    b, a, st = x.bid, x.ask, x.settle
+    mid = ((b + a) / 2).where((b > 0) & (a > 0) & (a >= b))
+    return {"mid": mid, "set": st.where(st > 0), "hyb": mid.fillna(st.where(st > 0))}[mode]
+
+def sigma2(g, T, mode="hyb", tick=0.1):
+    """CBOE VIX 單一到期 σ²；g：同一到期日的買賣權報價。截斷：連續兩檔價外報價缺或 ≤ 最小跳動就停止"""
+    c = g[g.cp == "C"].drop_duplicates("K").set_index("K"); p = g[g.cp == "P"].drop_duplicates("K").set_index("K")
+    Ks = c.index.union(p.index).sort_values()
+    cq, pq = quotes(c, mode).reindex(Ks), quotes(p, mode).reindex(Ks)
+    both = (cq - pq).dropna()
+    if len(both) < 3: return np.nan, np.nan
+    Kst = both.abs().idxmin(); F = Kst + np.exp(R * T) * both[Kst]
     K0 = Ks[Ks <= F].max() if (Ks <= F).any() else Ks.min()
     Q = {}
-    for side, x, order in (("P", p, [k for k in Ks[::-1] if k < K0]), ("C", c, [k for k in Ks if k > K0])):
-        zero = 0
+    for x, order in ((pq, [k for k in Ks[::-1] if k < K0]), (cq, [k for k in Ks if k > K0])):
+        bad = 0
         for k in order:
-            b = x.at[k, "bid"] if k in x.index else np.nan
-            if not (b > 0): zero += 1
-            else:
-                zero = 0; m = mid(x, k)
-                if np.isfinite(m): Q[k] = m
-            if zero >= 2: break
-    q0 = np.nanmean([cm.get(K0, np.nan), pm.get(K0, np.nan)])
+            v = x.get(k, np.nan)
+            if not (v > tick): bad += 1
+            else: bad = 0; Q[k] = v
+            if bad >= 2: break
+    q0 = np.nanmean([cq.get(K0, np.nan), pq.get(K0, np.nan)])
     if np.isfinite(q0): Q[K0] = q0
     ks = np.array(sorted(Q)); qs = np.array([Q[k] for k in ks])
     if len(ks) < 5: return np.nan, F
-    dK = np.gradient(ks) if len(ks) > 1 else np.array([0.0])
-    dK[0] = ks[1] - ks[0]; dK[-1] = ks[-1] - ks[-2]
+    dK = np.gradient(ks); dK[0] = ks[1] - ks[0]; dK[-1] = ks[-1] - ks[-2]
     s2 = 2 / T * np.sum(dK / ks ** 2 * np.exp(R * T) * qs) - 1 / T * (F / K0 - 1) ** 2
     return s2, F
 
-def day_vix(g, day, tdays):
-    exps = sorted(g.exp.unique()); res = {}
-    # 換月：近月剩 ≤2 個交易日（含當天之後）就改用次近月與第 2 個次近月
-    def tleft(e): return int(((tdays > day) & (tdays <= e)).sum()) if e <= tdays.max() else int(np.busday_count(day.date(), pd.Timestamp(e).date()))
+def day_vix(g, day, tdays, keep=None):
+    exps = sorted(g.exp.unique())
+    # 換月：近月剩 ≤2 個交易日就改用次近月與第 2 個次近月
+    def tleft(e): return int(((tdays > day) & (tdays <= e)).sum())
     exps = [e for e in exps if pd.Timestamp(e) > day and tleft(e) > 2][:2]
     if len(exps) < 2: return None
-    out = {}
-    for tag, e in zip(("near", "next"), exps):
-        mins = (pd.Timestamp(e) - day).days * 1440 + (13 * 60 + 30) - (13 * 60 + 45)
-        T = mins / 525600; s2, F = sigma2(g[g.exp == e], T)
-        out[f"T_{tag}"] = T; out[f"sig_{tag}"] = s2; out[f"F_{tag}"] = F
-    T1, T2, s1, s2 = out["T_near"], out["T_next"], out["sig_near"], out["sig_next"]
-    if not (np.isfinite(s1) and np.isfinite(s2)) or s1 <= 0 or s2 <= 0: return {**out, "close": np.nan}
-    N1, N2, N30, N365 = T1 * 525600, T2 * 525600, 30 * 1440, 365 * 1440
-    v = (T1 * s1 * (N2 - N30) / (N2 - N1) + T2 * s2 * (N30 - N1) / (N2 - N1)) * N365 / N30
-    return {**out, "close": 100 * np.sqrt(v) if v > 0 else np.nan}
+    if keep is not None: keep.append(g[g.exp.isin(exps)])
+    out = {}; Ts = []
+    for e in exps:
+        mins = (pd.Timestamp(e) - day).days * 1440 + (13 * 60 + 30) - (13 * 60 + 45); Ts.append(mins / 525600)
+    out["T_near"], out["T_next"] = Ts
+    for mode in ("hyb", "mid", "set"):
+        (s1, F1), (s2, _) = [sigma2(g[g.exp == e], T, mode) for e, T in zip(exps, Ts)]
+        if mode == "hyb": out.update(sig_near=s1, sig_next=s2, F_near=F1)
+        T1, T2 = Ts; v = np.nan
+        if np.isfinite(s1) and np.isfinite(s2) and s1 > 0 and s2 > 0:
+            N1, N2, N30, N365 = T1 * 525600, T2 * 525600, 30 * 1440, 365 * 1440
+            w = (T1 * s1 * (N2 - N30) / (N2 - N1) + T2 * s2 * (N30 - N1) / (N2 - N1)) * N365 / N30
+            v = 100 * np.sqrt(w) if w > 0 else np.nan
+        out["close" if mode == "hyb" else "close_" + mode] = v
+    return out
 
 if __name__ == "__main__":
     a = sys.argv; st = a[a.index("--start") + 1] if "--start" in a else "2016-01"; en = a[a.index("--end") + 1] if "--end" in a else dt.date.today().strftime("%Y-%m")
     log = {"start": st, "end": en, "months": {}}
     off, links = official(); log["official_links"] = links; log["official_days"] = len(off)
-    rows = []; months = pd.period_range(st, en, freq="M")
+    rows = []; months = pd.period_range(st, en, freq="M"); keep = []
     for pm in months:
         t0 = time.time(); d = month_df(pm.year, pm.month)
         if d is None: log["months"][str(pm)] = "fail"; print(pm, "fail"); continue
         tdays = pd.DatetimeIndex(sorted(d.date.unique()))
         for day, g in d.groupby("date"):
-            r = day_vix(g, day, pd.DatetimeIndex(sorted(set(tdays) | set(pd.bdate_range(day, day + pd.Timedelta(days=70))))))
+            r = day_vix(g, day, pd.DatetimeIndex(sorted(set(tdays) | set(pd.bdate_range(day, day + pd.Timedelta(days=70))))),
+                        keep if day >= off.index.min() - pd.Timedelta(days=1) else None)
             if r: rows.append({"date": day, **r})
         log["months"][str(pm)] = f"{len(tdays)} days, {len(d)} rows, {time.time()-t0:.0f}s"; print(pm, log["months"][str(pm)], flush=True)
         time.sleep(1)
     out = pd.DataFrame(rows).set_index("date").sort_index()
     out = out.join(off, how="outer")
     out.round(6).to_csv(os.path.join(EXT, "twvix_daily.csv"), encoding="utf-8")
+    if keep:  # 官方值期間的近月／次近月報價（小檔），供本機調校重建法
+        pd.concat(keep).to_csv(os.path.join(EXT, "twvix_txo_quotes_recent.csv.gz"), index=False, compression="gzip")
+    log["validation_by_mode"] = {}
+    for col in ("close", "close_mid", "close_set"):
+        bb = out[[col, "official"]].dropna(); ee = bb[col] - bb.official
+        if len(bb): log["validation_by_mode"][col] = {"days": len(bb), "corr": round(float(bb.corr().iloc[0, 1]), 4), "mae": round(float(ee.abs().mean()), 3),
+                                                     "within1pt": round(float((ee.abs() < 1).mean()), 3), "coverage": round(len(bb) / out.official.notna().sum(), 3)}
     both = out[["close", "official"]].dropna()
     if len(both):
         e = both.close - both.official
